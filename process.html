@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图片处理 - 智能图文对话平台</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="stylesheet" href="styles/animations.css">
+    <link rel="stylesheet" href="styles/process.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0">
+    <link rel="icon" type="image/svg+xml" href="assets/images/favicon.svg">
+    <!-- 在页面加载前应用主题，避免闪烁 -->
+    <script>
+        (function() {
+            // 读取主题设置并立即应用 - 优化加载速度
+            const savedTheme = localStorage.getItem('theme');
+            console.log("页面加载时检测主题:", savedTheme);
+            
+            // 预渲染关键样式，防止闪烁 - 直接应用，不等待DOM加载
+            if (savedTheme === 'dark') {
+                // 直接添加到HTML和body元素上
+                document.documentElement.classList.add('dark-theme');
+                if (document.body) {
+                    document.body.classList.add('dark-theme');
+                }
+                
+                // 预先插入一些关键样式，确保切换过程更流畅
+                const style = document.createElement('style');
+                style.textContent = `
+                    .dark-icon { opacity: 1 !important; transform: translate(-50%, -50%) scale(1) rotate(0deg) !important; }
+                    .light-icon { opacity: 0 !important; transform: translate(-50%, -50%) scale(0.5) rotate(180deg) !important; }
+                `;
+                document.head.appendChild(style);
+                
+                // 快速设置图标状态 - 无需等待DOMContentLoaded
+                document.addEventListener('DOMContentLoaded', function() {
+                    const darkIcon = document.querySelector('.dark-icon');
+                    const lightIcon = document.querySelector('.light-icon');
+                    
+                    // 确保元素存在再操作
+                    if (darkIcon && lightIcon) {
+                        // 设置绝对定位实现完美居中
+                        darkIcon.style.position = 'absolute';
+                        lightIcon.style.position = 'absolute';
+                        darkIcon.style.top = '50%';
+                        darkIcon.style.left = '50%';
+                        lightIcon.style.top = '50%';
+                        lightIcon.style.left = '50%';
+                        
+                        console.log("应用黑暗主题样式");
+                    } else {
+                        console.log("主题图标元素不存在，跳过样式应用");
+                    }
+                }, { once: true }); // 只执行一次，提高性能
+            } else {
+                document.documentElement.classList.remove('dark-theme');
+                if (document.body) {
+                    document.body.classList.remove('dark-theme');
+                }
+                
+                // 预先插入一些关键样式，确保切换过程更流畅
+                const style = document.createElement('style');
+                style.textContent = `
+                    .light-icon { opacity: 1 !important; transform: translate(-50%, -50%) scale(1) rotate(0deg) !important; }
+                    .dark-icon { opacity: 0 !important; transform: translate(-50%, -50%) scale(0.5) rotate(-180deg) !important; }
+                `;
+                document.head.appendChild(style);
+                
+                // 快速设置图标状态 - 无需等待DOMContentLoaded
+                document.addEventListener('DOMContentLoaded', function() {
+                    const darkIcon = document.querySelector('.dark-icon');
+                    const lightIcon = document.querySelector('.light-icon');
+                    
+                    // 确保元素存在再操作
+                    if (darkIcon && lightIcon) {
+                        // 设置绝对定位实现完美居中
+                        darkIcon.style.position = 'absolute';
+                        lightIcon.style.position = 'absolute';
+                        darkIcon.style.top = '50%';
+                        darkIcon.style.left = '50%';
+                        lightIcon.style.top = '50%';
+                        lightIcon.style.left = '50%';
+                        
+                        console.log("应用明亮主题样式");
+                    } else {
+                        console.log("主题图标元素不存在，跳过样式应用");
+                    }
+                }, { once: true }); // 只执行一次，提高性能
+            }
+            
+            // 添加一个页面完全加载后的性能优化
+            window.addEventListener('load', function() {
+                // 移除临时样式，让CSS接管，提高性能
+                const tempStyles = document.querySelectorAll('style[data-theme-temp]');
+                if (tempStyles && tempStyles.length) {
+                    tempStyles.forEach(style => style.remove());
+                }
+                
+                // 确保主题切换按钮可以立即响应
+                const themeToggleBtn = document.getElementById('theme-toggle-btn');
+                if (themeToggleBtn) {
+                    themeToggleBtn.setAttribute('data-ready', 'true');
+                }
+            }, { once: true });
+        })();
+    </script>
+</head>
+<body>
+    <!-- 主题切换覆盖效果 -->
+    <div id="theme-overlay" class="theme-overlay">
+        <div class="theme-overlay-light"></div>
+        <div class="theme-overlay-dark"></div>
+    </div>
+    
+    <!-- 顶部导航栏 -->
+    <header class="app-header">
+        <div class="header-container">
+            <div class="logo-container">
+                <svg class="logo-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2L4 7V17L12 22L20 17V7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M12 8L8 10.5V15.5L12 18L16 15.5V10.5L12 8Z" fill="currentColor"/>
+                    <circle cx="12" cy="6" r="1" fill="currentColor"/>
+                    <circle cx="12" cy="18" r="1" fill="currentColor"/>
+                    <circle cx="7" cy="9" r="1" fill="currentColor"/>
+                    <circle cx="17" cy="9" r="1" fill="currentColor"/>
+                    <circle cx="7" cy="15" r="1" fill="currentColor"/>
+                    <circle cx="17" cy="15" r="1" fill="currentColor"/>
+                </svg>
+                <h1 class="app-title">智能图文对话平台</h1>
+            </div>
+            <nav class="main-nav">
+                <ul class="nav-list">
+                    <li class="nav-item"><a href="index.html">首页</a></li>
+                    <li class="nav-item active"><a href="process.html">开始处理</a></li>
+                </ul>
+            </nav>
+            <div class="theme-toggle">
+                <button id="theme-toggle-btn" aria-label="切换主题">
+                    <span class="material-symbols-rounded light-icon">light_mode</span>
+                    <span class="material-symbols-rounded dark-icon">dark_mode</span>
+                </button>
+                <!-- 主题切换特效元素 -->
+                <div class="theme-toggle-effects">
+                    <!-- 星星元素 - 切换到暗黑模式时显示 -->
+                    <div class="star star-1"></div>
+                    <div class="star star-2"></div>
+                    <div class="star star-3"></div>
+                    <div class="star star-4"></div>
+                    <div class="star star-5"></div>
+                    <div class="star star-6"></div>
+                    
+                    <!-- 光线元素 - 切换到明亮模式时显示 -->
+                    <div class="ray ray-1"></div>
+                    <div class="ray ray-2"></div>
+                    <div class="ray ray-3"></div>
+                    <div class="ray ray-4"></div>
+                    <div class="ray ray-5"></div>
+                    <div class="ray ray-6"></div>
+                    <div class="ray ray-7"></div>
+                    <div class="ray ray-8"></div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主内容区 -->
+    <main class="app-main process-main">
+        <div class="process-container">
+            <!-- 步骤导航 -->
+            <div class="steps-nav">
+                <div class="step-indicator active" data-step="1">
+                    <div class="step-number">1</div>
+                    <div class="step-info">
+                        <div class="step-name">选择操作</div>
+                        <div class="step-desc">选择处理类型</div>
+                    </div>
+                </div>
+                <div class="step-connector"></div>
+                <div class="step-indicator" data-step="2">
+                    <div class="step-number">2</div>
+                    <div class="step-info">
+                        <div class="step-name">图片处理</div>
+                        <div class="step-desc">上传或描述图片</div>
+                    </div>
+                </div>
+                <div class="step-connector"></div>
+                <div class="step-indicator" data-step="3">
+                    <div class="step-number">3</div>
+                    <div class="step-info">
+                        <div class="step-name">选择风格</div>
+                        <div class="step-desc">指定转换风格</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 步骤内容区域 -->
+            <div class="step-content-container">
+                <!-- 步骤1：选择操作 -->
+                <div class="step-content active" id="step-1">
+                    <h2 class="step-title">选择操作</h2>
+                    <p class="step-description">选择您想要执行的操作类型，点击后将自动进入下一步</p>
+                    
+                    <div class="operation-options">
+                        <div class="operation-option clickable" data-operation="generate">
+                            <div class="option-icon">
+                                <span class="material-symbols-rounded">auto_awesome</span>
+                            </div>
+                            <div class="option-info">
+                                <h3 class="option-title">一句话生成美图</h3>
+                                <p class="option-desc">输入简单的文字描述，AI立即生成精美图像</p>
+                            </div>
+                            <div class="click-hint">点击选择</div>
+                        </div>
+                        
+                        <div class="operation-option clickable" data-operation="style">
+                            <div class="option-icon">
+                                <span class="material-symbols-rounded">brush</span>
+                            </div>
+                            <div class="option-info">
+                                <h3 class="option-title">风格转换</h3>
+                                <p class="option-desc">将图像转换为特定的艺术风格</p>
+                            </div>
+                            <div class="click-hint">点击选择</div>
+                        </div>
+                        
+                        <div class="operation-option clickable" data-operation="creative">
+                            <div class="option-icon">
+                                <span class="material-symbols-rounded">palette</span>
+                            </div>
+                            <div class="option-info">
+                                <h3 class="option-title">创意生成</h3>
+                                <p class="option-desc">基于图像创建创意变体</p>
+                            </div>
+                            <div class="click-hint">点击选择</div>
+                        </div>
+                    </div>
+
+                    <div class="step-actions">
+                        <button class="next-btn" id="next-to-step2" disabled style="display: none;">
+                            <span>下一步</span>
+                            <span class="material-symbols-rounded">arrow_forward</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 步骤2：图片处理 -->
+                <div class="step-content" id="step-2">
+                    <h2 class="step-title">图片处理</h2>
+                    <p class="step-description" id="step2-description">根据您的选择，上传图片或输入描述</p>
+                    
+                    <!-- 上传图片区域 - 根据操作类型显示或隐藏 -->
+                    <div class="upload-container" id="upload-area">
+                        <div class="upload-inner">
+                            <div class="upload-icon-container">
+                                <span class="material-symbols-rounded upload-icon">cloud_upload</span>
+                            </div>
+                            <p class="upload-text">拖放图片至此处或点击上传</p>
+                            <p class="upload-hint">支持JPG、PNG和GIF格式，最大10MB</p>
+                            <input type="file" id="file-input" accept="image/*" hidden>
+                            <button class="upload-btn">选择图片</button>
+                        </div>
+                        <div class="preview-container" id="image-preview" hidden>
+                            <img id="preview-image" src="" alt="预览图">
+                            <button class="remove-btn" id="remove-image" aria-label="移除图片">
+                                <span class="material-symbols-rounded">close</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 文字描述区域 - 仅在一句话生成美图时显示 -->
+                    <div class="text-description-container" id="text-description-area" style="display: none;">
+                        <h3 class="description-title">输入图片描述</h3>
+                        <p class="description-hint">详细描述您想生成的图像，包括风格、主题、颜色等</p>
+                        <textarea id="image-description" placeholder="例如：一只可爱的橙色猫咪坐在窗台上，看着窗外的雨景，背景是模糊的城市天际线，整体画面温暖文艺..." rows="5"></textarea>
+                        
+                        <!-- 随机示例提示词 -->
+                        <div class="examples-container">
+                            <h4 class="examples-title">示例提示词</h4>
+                            <div class="example-prompts" id="example-prompts">
+                                <!-- 这里会根据操作类型动态插入示例提示词 -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="step-actions">
+                        <button class="back-btn" id="back-to-step1">
+                            <span class="material-symbols-rounded">arrow_back</span>
+                            <span>上一步</span>
+                        </button>
+                        <button class="next-btn" id="next-to-step3" disabled>
+                            <span>下一步</span>
+                            <span class="material-symbols-rounded">arrow_forward</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 步骤3：选择风格（仅在风格转换时显示） -->
+                <div class="step-content" id="step-3">
+                    <h2 class="step-title">选择风格</h2>
+                    <p class="step-description">选择您想要转换成的艺术风格</p>
+                    
+                    <!-- 高阶创意风格部分移动到上方 -->
+                    <div class="advanced-style-options">
+                        <h3 class="advanced-options-title">高阶创意风格</h3>
+                        <p class="advanced-options-desc">选择一种高阶创意风格，系统将自动生成对应提示词</p>
+                        
+                        <div class="creative-styles">
+                            <div class="creative-style-option" data-style="creative">
+                                <div class="creative-preview">
+                                    <img src="assets/examples/吉卜力风格的四格漫画.png" alt="吉卜力风格">
+                                </div>
+                                <div class="creative-info">
+                                    <h3 class="creative-title">吉卜力风格</h3>
+                                    <p class="creative-desc">宫崎骏吉卜力工作室的温暖柔和风格</p>
+                                </div>
+                            </div>
+                            
+                            <div class="creative-style-option" data-style="poster">
+                                <div class="creative-preview">
+                                    <img src="assets/examples/讽刺海报.jpg" alt="讽刺海报风格">
+                                </div>
+                                <div class="creative-info">
+                                    <h3 class="creative-title">讽刺海报风格</h3>
+                                    <p class="creative-desc">带有社会批判性的海报艺术风格</p>
+                                </div>
+                            </div>
+                            
+                            <div class="creative-style-option" data-style="sticker">
+                                <div class="creative-preview">
+                                    <img src="assets/examples/熊猫吃蛋筒冰淇凌的，厚白边和透明背景贴纸.png" alt="卡通贴纸效果">
+                                </div>
+                                <div class="creative-info">
+                                    <h3 class="creative-title">卡通贴纸效果</h3>
+                                    <p class="creative-desc">将图像转换为可爱的卡通贴纸风格，带有厚白边和透明背景</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="style-options">
+                        <div class="style-option" data-style="anime">
+                            <div class="style-preview">
+                                <img src="assets/examples/cartoon.jpg" alt="动漫风格">
+                            </div>
+                            <div class="style-info">
+                                <h3 class="style-title">动漫风格</h3>
+                                <p class="style-desc">日本动漫风格，线条清晰，色彩鲜明</p>
+                            </div>
+                        </div>
+                        
+                        <div class="style-option" data-style="oil">
+                            <div class="style-preview">
+                                <img src="assets/examples/oil.jpg" alt="油画风格">
+                            </div>
+                            <div class="style-info">
+                                <h3 class="style-title">油画风格</h3>
+                                <p class="style-desc">经典油画质感，丰富的色彩层次</p>
+                            </div>
+                        </div>
+                        
+                        <div class="style-option" data-style="sketch">
+                            <div class="style-preview">
+                                <img src="assets/examples/sketch.jpg" alt="素描风格">
+                            </div>
+                            <div class="style-info">
+                                <h3 class="style-title">素描风格</h3>
+                                <p class="style-desc">黑白素描效果，强调线条和明暗</p>
+                            </div>
+                        </div>
+                        
+                        <div class="style-option" data-style="pixel">
+                            <div class="style-preview">
+                                <img src="assets/examples/pixelart.jpg" alt="像素风格">
+                            </div>
+                            <div class="style-info">
+                                <h3 class="style-title">像素风格</h3>
+                                <p class="style-desc">复古像素艺术风格，方块状图像元素</p>
+                            </div>
+                        </div>
+                        
+                        <div class="style-option" data-style="watercolor">
+                            <div class="style-preview">
+                                <img src="assets/examples/watercolor.jpg" alt="水彩画风格">
+                            </div>
+                            <div class="style-info">
+                                <h3 class="style-title">水彩画风格</h3>
+                                <p class="style-desc">轻盈透明的水彩画效果，色彩柔和自然</p>
+                            </div>
+                        </div>
+                        
+                        <div class="style-option" data-style="comic">
+                            <div class="style-preview">
+                                <img src="assets/examples/comic.jpg" alt="漫画风格">
+                            </div>
+                            <div class="style-info">
+                                <h3 class="style-title">漫画风格</h3>
+                                <p class="style-desc">美式漫画风格，强调线条和分块色彩</p>
+                            </div>
+                        </div>
+                        
+                        <div class="style-option" data-style="vintage">
+                            <div class="style-preview">
+                                <img src="assets/examples/vintage.jpg" alt="复古风格">
+                            </div>
+                            <div class="style-info">
+                                <h3 class="style-title">复古风格</h3>
+                                <p class="style-desc">怀旧复古滤镜效果，营造时代感氛围</p>
+                            </div>
+                        </div>
+                        
+                        <div class="style-option" data-style="cyberpunk">
+                            <div class="style-preview">
+                                <img src="assets/examples/cyberpunk.jpg" alt="赛博朋克风格">
+                            </div>
+                            <div class="style-info">
+                                <h3 class="style-title">赛博朋克风格</h3>
+                                <p class="style-desc">科技感强烈的未来风格，霓虹色彩</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 添加自定义风格指令区域 -->
+                    <div class="custom-instruction-container" id="style-customization-area">
+                        <h3 class="customization-title">自定义风格指令</h3>
+                        <p class="customization-hint">您可以选择上方的预设风格或在此处输入自定义风格指令。选择预设风格后，您仍可在此处<span class="highlight">修改提示词</span>（修改后预设风格的选中状态将被取消）</p>
+                        <textarea id="style-custom-instruction" placeholder="例如：将图片转换为梵高星空风格，保持主体轮廓清晰，增强色彩对比度，添加漩涡状笔触效果..."></textarea>
+                    </div>
+
+                    <div class="step-actions">
+                        <button class="back-btn" id="back-to-step2">
+                            <span class="material-symbols-rounded">arrow_back</span>
+                            <span>上一步</span>
+                        </button>
+                        <button class="process-btn" id="start-processing">
+                            <span class="material-symbols-rounded">auto_fix_high</span>
+                            <span>开始处理</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 处理结果区域 -->
+            <div class="result-container" id="result-container" hidden>
+                <div class="result-header">
+                    <h2 class="result-title">处理结果</h2>
+                    <button class="close-result-btn" id="close-result-btn">
+                        <span class="material-symbols-rounded">close</span>
+                    </button>
+                </div>
+                <div class="result-content">
+                    <div class="result-comparison">
+                        <div class="result-original">
+                            <h3>原始图片</h3>
+                            <div class="image-container">
+                                <img id="original-image" src="" alt="原始图片">
+                            </div>
+                        </div>
+                        <div class="result-processed">
+                            <h3>处理后图片</h3>
+                            <div class="image-container">
+                                <img id="processed-image" src="" alt="处理后图片">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="result-description" id="result-description">
+                        <!-- 处理结果描述将在这里动态生成 -->
+                    </div>
+                    <div class="result-actions">
+                        <button class="download-btn" id="download-result-btn">
+                            <span class="material-symbols-rounded">download</span>
+                            下载结果
+                        </button>
+                        <button class="retry-btn" id="retry-btn">
+                            <span class="material-symbols-rounded">refresh</span>
+                            重新处理
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="app-footer">
+        <div class="footer-container">
+            <p>© 2024 智能图文对话平台 - 基于GPT-4o-alle | 使用<a href="#" target="_blank">第三方API</a>提供服务</p>
+        </div>
+    </footer>
+
+    <!-- 加载指示器 -->
+    <div class="loading-container" id="loading-indicator" hidden>
+        <div class="loading-spinner"></div>
+        <p class="loading-text">正在处理...</p>
+    </div>
+
+    <!-- 弹窗提示 -->
+    <div class="toast" id="toast-message"></div>
+
+    <!-- JavaScript文件 -->
+    <script src="scripts/ui.js"></script>
+    <script src="scripts/api.js"></script>
+    <script src="scripts/process.js"></script>
+</body>
+</html> 
