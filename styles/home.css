@@ -527,7 +527,7 @@
     .hero-section {
         flex-direction: column;
         text-align: center;
-        padding: 40px 20px;
+        padding: 40px 24px;
     }
     
     .hero-title {
@@ -535,7 +535,7 @@
     }
     
     .hero-subtitle {
-        font-size: 1.2rem;
+        font-size: 1.3rem;
     }
     
     .hero-actions {
@@ -554,6 +554,7 @@
     
     .section-title {
         font-size: 1.8rem;
+        margin-bottom: 30px;
     }
     
     .examples-grid {
@@ -567,13 +568,70 @@
     .cta-description {
         font-size: 1rem;
     }
-
+    
     .example-image {
-        height: 180px;
+        width: 100%;
     }
-
+    
     .example-large-image {
-        height: 220px;
+        width: 100%;
+    }
+    
+    /* 加强导航栏响应式设计 */
+    .header-container {
+        padding: 12px 16px;
+    }
+    
+    .logo-container {
+        gap: 8px;
+    }
+    
+    .app-title {
+        font-size: 1.3rem;
+    }
+    
+    /* 改进功能卡片显示 */
+    .features-grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+    
+    .feature-card {
+        padding: 24px 20px;
+    }
+    
+    .feature-icon {
+        width: 56px;
+        height: 56px;
+    }
+    
+    /* 改进示例区域 */
+    .examples-section, .features-section, .steps-section {
+        padding: 40px 20px;
+    }
+    
+    .category-title {
+        font-size: 1.5rem;
+    }
+    
+    .category-description {
+        font-size: 0.95rem;
+    }
+    
+    /* 改进步骤区域 */
+    .steps-container {
+        grid-template-columns: 1fr;
+        gap: 24px;
+    }
+    
+    /* 改进CTA区域 */
+    .cta-section {
+        padding: 40px 20px;
+    }
+    
+    .cta-button {
+        width: 100%;
+        justify-content: center;
     }
 }
 
@@ -584,6 +642,7 @@
     
     .hero-actions {
         flex-direction: column;
+        width: 100%;
     }
     
     .primary-btn, .secondary-btn {
@@ -592,18 +651,159 @@
     }
     
     .step-card {
-        padding: 24px 16px;
+        padding: 20px;
     }
     
     .example-before-after {
         flex-direction: column;
     }
-
+    
     .example-image {
-        height: 180px;
+        width: 100%;
     }
-
+    
     .example-large-image {
-        height: 200px;
+        width: 100%;
+    }
+    
+    /* 改进导航栏在小屏幕上的显示 */
+    .nav-item a {
+        font-size: 0.9rem;
+        padding: 3px 0;
+    }
+    
+    /* 改进功能图标 */
+    .feature-icon {
+        width: 48px;
+        height: 48px;
+    }
+    
+    .feature-icon .material-symbols-rounded {
+        font-size: 24px;
+    }
+    
+    /* 优化文字大小 */
+    .feature-title {
+        font-size: 1.2rem;
+    }
+    
+    .feature-description {
+        font-size: 0.9rem;
+    }
+    
+    /* 优化示例卡片 */
+    .example-card, .creative-card {
+        padding: 16px;
+    }
+    
+    .example-title {
+        font-size: 1.1rem;
+    }
+    
+    .example-description {
+        font-size: 0.9rem;
+    }
+    
+    /* 优化图片查看器 */
+    .viewer-container {
+        width: 95%;
+        max-width: 95%;
+    }
+    
+    .viewer-close {
+        top: 10px;
+        right: 10px;
+    }
+}
+
+/* 添加超小屏幕的优化 */
+@media (max-width: 360px) {
+    .hero-title {
+        font-size: 1.8rem;
+    }
+    
+    .hero-subtitle {
+        font-size: 1.1rem;
+        margin-bottom: 20px;
+    }
+    
+    .app-title {
+        font-size: 1.1rem;
+    }
+    
+    .logo-icon {
+        width: 28px;
+        height: 28px;
+    }
+    
+    .section-title {
+        font-size: 1.5rem;
+        margin-bottom: 20px;
+    }
+    
+    .feature-card {
+        padding: 20px 16px;
+    }
+    
+    .step-number {
+        width: 32px;
+        height: 32px;
+        font-size: 1rem;
+    }
+    
+    .step-title {
+        font-size: 1.1rem;
+    }
+    
+    .step-description {
+        font-size: 0.85rem;
+    }
+    
+    .nav-list {
+        gap: 10px;
+    }
+}
+
+/* 添加针对横屏模式的优化 */
+@media (max-height: 600px) and (orientation: landscape) {
+    .hero-section {
+        padding: 20px;
+        flex-direction: row;
+        align-items: center;
+    }
+    
+    .hero-title {
+        font-size: 2rem;
+    }
+    
+    .hero-subtitle {
+        font-size: 1.1rem;
+        margin-bottom: 16px;
+    }
+    
+    .hero-content {
+        flex: 1;
+        text-align: left;
+    }
+    
+    .hero-image {
+        flex: 1;
+    }
+    
+    .hero-image img {
+        max-height: 300px;
+        object-fit: contain;
+    }
+    
+    .features-section, .examples-section, .steps-section {
+        padding: 20px;
+    }
+    
+    .steps-container {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .feature-card {
+        padding: 16px;
     }
 } 

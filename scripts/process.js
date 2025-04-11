@@ -25,6 +25,32 @@ const state = {
     processingError: null // 添加处理错误存储
 };
 
+// 添加示例提示词对象
+// 用于在不同操作模式下提供示例提示词
+const examplePrompts = {
+    'generate': [
+        '绘制一个梦幻般的仙境花园，有七彩瀑布、巨大的蘑菇和飞舞的萤火虫，使用梦幻般的色彩和细节',
+        '画一只可爱的橙色猫咪坐在窗台上，看着窗外的雨景，背景是模糊的城市天际线，整体画面温暖文艺',
+        '一条宁静的乡间小路，两旁是金色麦田，远处有山脉和日落，天空呈现紫红色的晚霞，画面有印象派的感觉',
+        '展示一个未来主义城市空中花园，悬浮的平台上种满各种外星植物，有玻璃天桥连接，背景是繁忙的飞行器交通',
+        '创建一个神秘的古老图书馆内部场景，高耸的书架直达天花板，有魔法般的浮动书本和发光的尘埃粒子'
+    ],
+    'style': [
+        '将图片转换为宫崎骏动画风格，保持画面温暖柔和',
+        '将图片转换为梵高星空风格，添加漩涡状笔触和鲜艳对比色',
+        '将图片转换为低多边形几何风格，保持图像轮廓清晰',
+        '将图片转换为霓虹赛博朋克风格，加入强烈的蓝紫色调和光影效果',
+        '将图片转换为水墨国画风格，保留细节但增加水墨晕染效果'
+    ],
+    'creative': [
+        '以这张图片为基础，创建一幅科幻电影海报，添加未来感字体和元素',
+        '创建一个四格漫画，以图片中的主体为主角，展示一个有趣的日常故事',
+        '将图片变成厚白边透明背景的卡通贴纸风格，增加可爱元素',
+        '以图片为基础创建一个复古电视机效果，加入故障艺术风格',
+        '创建一个全景环绕效果，把图片主体放在一个微缩宇宙中'
+    ]
+};
+
 // 确保在全局window对象上也有该状态
 window.state = state;
 
@@ -148,6 +174,9 @@ async function processImageWithInstruction() {
             // 处理API响应
             console.log("API响应:", response);
             
+            // 将API响应保存到全局状态，以便可能的重试操作
+            window.state.lastApiResponse = response;
+            
             // 判断处理是否成功
             const processingSuccess = response && response.status === 'success';
             
@@ -208,12 +237,16 @@ async function processImageWithInstruction() {
             window.state.processingSuccess = false;
             window.state.processDescription = errorMessage;
             
-            // 显示错误结果
-            showResultView({
+            // 创建错误响应对象并保存到状态中
+            const errorResponse = {
                 type: 'text',
                 content: errorMessage,
                 status: 'error'
-            });
+            };
+            window.state.lastApiResponse = errorResponse;
+            
+            // 显示错误结果
+            showResultView(errorResponse);
             
             // 尝试处理API失败
             handleApiFailure(operation, window.state.uploadedImageUrl);
@@ -557,6 +590,144 @@ function initResultViewer() {
     if (retryBtn) {
         retryBtn.addEventListener('click', handleRetry);
     }
+    
+    // 为结果图片添加点击查看事件
+    const resultImages = document.querySelectorAll('#processed-image, #original-image');
+    resultImages.forEach(image => {
+        image.addEventListener('click', function() {
+            if (this.src && this.src !== '' && this.src !== 'undefined') {
+                // 查看是否有createMobileImageViewer函数（移动端优化脚本已加载）
+                if (typeof createMobileImageViewer === 'function') {
+                    createMobileImageViewer(this.src);
+                } else {
+                    // 创建简单的图片查看器
+                    createSimpleImageViewer(this.src);
+                }
+            }
+        });
+    });
+}
+
+/**
+ * 创建简单的图片查看器（备用方案）
+ * @param {string} imageSrc - 图片URL
+ */
+function createSimpleImageViewer(imageSrc) {
+    // 检查是否已存在查看器
+    let viewer = document.getElementById('simple-image-viewer');
+    
+    if (!viewer) {
+        // 创建查看器元素
+        viewer = document.createElement('div');
+        viewer.id = 'simple-image-viewer';
+        viewer.className = 'simple-image-viewer';
+        
+        // 添加HTML结构
+        viewer.innerHTML = `
+            <div class="viewer-backdrop"></div>
+            <div class="viewer-content">
+                <img src="${imageSrc}" alt="查看图片" class="viewer-image">
+                <button class="viewer-close"><span class="material-symbols-rounded">close</span></button>
+            </div>
+        `;
+        
+        // 添加查看器样式
+        const style = document.createElement('style');
+        style.textContent = `
+            .simple-image-viewer {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                z-index: 9999;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                opacity: 0;
+                transition: opacity 0.3s ease;
+                visibility: hidden;
+            }
+            
+            .simple-image-viewer.active {
+                opacity: 1;
+                visibility: visible;
+            }
+            
+            .simple-image-viewer .viewer-backdrop {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.9);
+                cursor: pointer;
+            }
+            
+            .simple-image-viewer .viewer-content {
+                position: relative;
+                max-width: 95%;
+                max-height: 90%;
+                z-index: 2;
+            }
+            
+            .simple-image-viewer .viewer-image {
+                max-width: 100%;
+                max-height: 85vh;
+                object-fit: contain;
+                border-radius: 8px;
+                box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+            }
+            
+            .simple-image-viewer .viewer-close {
+                position: absolute;
+                top: -40px;
+                right: 0;
+                background-color: rgba(255, 255, 255, 0.2);
+                border: none;
+                width: 36px;
+                height: 36px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: white;
+                cursor: pointer;
+            }
+            
+            .simple-image-viewer .viewer-close:hover {
+                background-color: rgba(255, 255, 255, 0.3);
+            }
+        `;
+        
+        document.head.appendChild(style);
+        document.body.appendChild(viewer);
+        
+        // 添加关闭按钮事件
+        const closeBtn = viewer.querySelector('.viewer-close');
+        const backdrop = viewer.querySelector('.viewer-backdrop');
+        
+        [closeBtn, backdrop].forEach(element => {
+            element.addEventListener('click', function() {
+                viewer.classList.remove('active');
+                setTimeout(() => {
+                    viewer.style.visibility = 'hidden';
+                }, 300);
+            });
+        });
+    } else {
+        // 如果查看器已存在，更新图片
+        const viewerImage = viewer.querySelector('.viewer-image');
+        if (viewerImage) {
+            viewerImage.src = imageSrc || '';
+        }
+    }
+    
+    // 显示查看器
+    viewer.style.visibility = 'visible';
+    setTimeout(() => {
+        viewer.classList.add('active');
+    }, 10);
 }
 
 /**
@@ -2168,6 +2339,13 @@ async function handleRetry() {
     try {
         console.log("执行重试操作");
         
+        // 确保我们有lastApiResponse
+        if (!window.state.lastApiResponse) {
+            console.error("没有找到上次的API响应，无法重试");
+            showToast("无法重试操作，请重新开始", "error");
+            return;
+        }
+        
         // 清除任何错误状态
         window.state.processingError = null;
         
@@ -2259,6 +2437,9 @@ async function handleRetry() {
             if (apiResponse) {
                 console.log("API重试响应:", apiResponse);
                 
+                // 更新lastApiResponse
+                window.state.lastApiResponse = apiResponse;
+                
                 // 更新进度条为完成状态
                 updateProgressBar(100, '处理完成!');
                 
@@ -2297,15 +2478,19 @@ async function handleRetry() {
             window.state.processingError = error;
             window.state.processDescription = `重试失败: ${error.message}`;
             
+            // 创建错误响应对象并保存
+            const errorResponse = {
+                type: 'text',
+                content: `重试失败: ${error.message}`,
+                status: 'error'
+            };
+            window.state.lastApiResponse = errorResponse;
+            
             // 更新进度条为错误状态
             updateProgressBar(100, '重试失败!', true);
             
             // 显示错误结果
-            showResultView({
-                type: 'text',
-                content: `重试过程中出错: ${error.message}`,
-                status: 'error'
-            });
+            showResultView(errorResponse);
             
             // 隐藏加载指示器
             hideLoadingIndicator();

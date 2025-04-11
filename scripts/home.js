@@ -191,6 +191,7 @@ function createImageViewer() {
     // 创建图片查看器元素
     const imageViewer = document.createElement('div');
     imageViewer.className = 'image-viewer';
+    imageViewer.id = 'home-image-viewer'; // 使用不同的ID
     imageViewer.innerHTML = `
         <div class="viewer-backdrop"></div>
         <div class="viewer-container">
@@ -224,13 +225,15 @@ function createImageViewer() {
         const target = e.target;
         if (target.tagName === 'IMG' && (target.closest('.example-image') || target.closest('.example-large-image'))) {
             const imgSrc = target.src;
-            openViewer(imgSrc);
+            if (imgSrc && imgSrc !== '') {
+                openViewer(imgSrc);
+            }
         }
     });
     
     // 打开查看器函数
     function openViewer(imgSrc) {
-        viewerImage.src = imgSrc;
+        viewerImage.src = imgSrc || '';
         imageViewer.classList.add('active');
         document.body.style.overflow = 'hidden'; // 防止背景滚动
     }
