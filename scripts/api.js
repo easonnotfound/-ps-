@@ -50,7 +50,7 @@ class API {
             try {
                 // 准备API请求数据
                 const requestData = {
-                    model: "gpt-4o-image-vip", // 使用gpt-4o模型，它支持图像处理和生成
+                    model: "gpt-4o-image", // 使用gpt-4o模型，它支持图像处理和生成
                     messages: [
                         {
                             role: "system",
