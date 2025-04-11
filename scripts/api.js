@@ -38,113 +38,110 @@ class API {
      */
     async processImageWithInstruction(imageFile, instruction) {
         try {
+            console.log("开始处理图片和指令");
+            
             // 显示加载指示器
             const loadingIndicator = document.getElementById('loading-indicator');
             if (loadingIndicator) {
                 loadingIndicator.hidden = false;
+                console.log("加载指示器已显示");
             }
-            
-            console.log(`处理请求: ${imageFile ? '图片处理' : '纯文本生成'}, 指令: ${instruction}`);
-            
-            // 构建消息内容数组 - 根据文档格式化
-            const messages = [
-                {
-                    "role": "system",
-                    "content": "你是一个专业的图像处理助手。请根据用户的请求处理图像。请确保保留原始图像的主体特征，仅应用风格变化。请严格按照用户的指示进行图像处理。输出的图像应与输入图像的尺寸相同。对于图片处理，请详细解释你做了什么。"
-                }
-            ];
-            
-            // 获取原始图片尺寸
-            let imageWidth = null;
-            let imageHeight = null;
-            let imageRatio = "1:1"; // 默认比例
-            
-            // 根据是否有图片准备不同的用户消息内容
-            if (imageFile) {
-                try {
-                    // 获取图片尺寸
-                    const dimensions = await this.getImageDimensions(imageFile);
-                    imageWidth = dimensions.width;
-                    imageHeight = dimensions.height;
-                    imageRatio = `${imageWidth}:${imageHeight}`;
-                    console.log(`原始图片尺寸: ${imageWidth}x${imageHeight}, 比例: ${imageRatio}`);
-                    
-                    // 将图片转换为base64格式
-                    const imageBase64 = await this.convertImageToBase64(imageFile);
-                    console.log("图片已转换为Base64格式");
-                    
-                    // 构建带图片的用户消息 - 符合API要求的格式
-                    const userContent = [
-                        {
-                            "type": "text",
-                            "text": `${instruction}\n请确保输出图像与输入图像尺寸相同，比例为 ${imageRatio}。请严格保持图像的主体特征，仅应用风格变化。`
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": imageBase64
-                            }
-                        }
-                    ];
-                    
-                    messages.push({
-                        "role": "user",
-                        "content": userContent
-                    });
-                } catch (imgError) {
-                    console.error("图片转换错误:", imgError);
-                    throw new Error(`图片处理失败: ${imgError.message}`);
-                }
-            } else {
-                // 添加纯文本的用户消息 - 用于一句话生成美图功能
-                messages.push({
-                    "role": "user",
-                    "content": instruction
-                });
-            }
-            
-            // 准备请求数据 - 严格按照API文档要求
-            const requestData = {
-                "model": "gpt-4o-image-vip", // 更新为支持图像生成的最新模型
-                "messages": messages,
-                "max_tokens": 4000,
-                "temperature": 0.7
-            };
-            
-            console.log("正在发送API请求...");
             
             try {
-                // 发送请求到API
+                // 准备API请求数据
+                const requestData = {
+                    model: "gpt-4o-image-vip", // 使用gpt-4o模型，它支持图像处理和生成
+                    messages: [
+                        {
+                            role: "system",
+                            content: imageFile ? 
+                                "你是一个专业的图像处理助手，擅长风格转换、图像描述和创意变化。请仔细分析用户提供的图片，根据用户指令处理图片。处理后请务必保留原图像的主要特征，同时应用所需的风格变化。提供处理后的图片链接，并详细解释你的处理过程和结果。请注意：必须在回复中包含生成的图片链接（Markdown格式）。" : 
+                                "你是一个专业的创意图像生成专家。请根据用户的文字描述创建精美的图像。确保图像质量高，与描述内容相符。你的回复必须包含生成的图片链接，并使用Markdown格式：![图片描述](http://图片URL)。请确保所有生成的图片链接正确且可访问。",
+                        },
+                        {
+                            role: "user",
+                            content: []
+                        }
+                    ],
+                    temperature: 0.7,
+                    max_tokens: 4096
+                };
+
+                // 添加指令文本
+                requestData.messages[1].content.push({
+                    type: "text",
+                    text: instruction
+                });
+
+                // 如果提供了图片文件，添加到请求中
+                if (imageFile) {
+                    // 转换图片为base64
+                    const imageDataBase64 = await this.convertImageToBase64(imageFile);
+
+                    // 获取图片尺寸
+                    const dimensions = await this.getImageDimensions(imageFile);
+
+                    // 添加图片数据到请求
+                    requestData.messages[1].content.push({
+                        type: "image_url",
+                        image_url: {
+                            url: imageDataBase64,
+                            detail: "high" // 使用高细节模式
+                        }
+                    });
+
+                    // 设置图片尺寸以便后续处理
+                    var imageWidth = dimensions.width;
+                    var imageHeight = dimensions.height;
+                } else {
+                    // 如果没有图片，设置为null
+                    var imageWidth = null;
+                    var imageHeight = null;
+                }
+
+                console.log("API请求数据构建完成", { 
+                    hasImage: !!imageFile, 
+                    instruction,
+                    imageWidth,
+                    imageHeight
+                });
+
+                // 发送API请求
+                console.log(`发送API请求到 ${this.apiEndpoint}`);
                 const response = await fetch(this.apiEndpoint, {
-                    ...this.defaultOptions,
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${this.apiKey}`
+                    },
                     body: JSON.stringify(requestData)
                 });
-                
-                console.log("收到API响应状态:", response.status);
-                
-                // 检查响应状态
+
                 if (!response.ok) {
                     const errorText = await response.text();
-                    console.error("API响应错误:", errorText);
-                    throw new Error(`API请求失败: 状态码 ${response.status}, 响应: ${errorText}`);
+                    throw new Error(`API请求失败: ${response.status} ${response.statusText} - ${errorText}`);
                 }
-                
-                // 获取响应JSON
+
+                // 解析API响应
                 const data = await response.json();
-                console.log("API响应内容:", data);
+                console.log("收到API响应:", data);
                 
-                // 保存最后的响应数据，用于可能的延迟响应检查
+                // 保存最后一次响应数据，用于可能的延迟检查
                 this.lastResponseData = data;
                 
-                // 从响应中提取任务ID和生成ID
-                if (data && data.choices && data.choices.length > 0 && data.choices[0].message) {
+                // 提取task_id和gen_id（如果存在）
+                if (data && data.choices && data.choices[0] && data.choices[0].message) {
                     const content = data.choices[0].message.content || '';
                     
-                    // 提取任务ID和生成ID
-                    const taskIdMatch = content.match(/task_[a-z0-9]+/) || 
-                                       content.match(/任务ID[：:]\s*["`]?(task_[a-z0-9]+)["`]?/);
-                    const genIdMatch = content.match(/gen_[a-z0-9]+/) ||
-                                      content.match(/生成ID[：:]\s*["`]?(gen_[a-z0-9]+)["`]?/);
+                    // 提取task_id
+                    const taskIdMatch = content.match(/task_id[：:]\s*["']?(task_[a-z0-9]+)["']?/i) || 
+                                       content.match(/任务ID[：:]\s*["']?(task_[a-z0-9]+)["']?/i) ||
+                                       content.match(/task_[a-z0-9]+/i);
+                                       
+                    // 提取gen_id
+                    const genIdMatch = content.match(/gen_id[：:]\s*["']?(gen_[a-z0-9]+)["']?/i) ||
+                                      content.match(/生成ID[：:]\s*["']?(gen_[a-z0-9]+)["']?/i) ||
+                                      content.match(/gen_[a-z0-9]+/i);
                     
                     if (taskIdMatch && taskIdMatch[0]) {
                         this.lastTaskId = taskIdMatch[0];
@@ -159,15 +156,20 @@ class API {
                 
                 // 处理API响应
                 return this.processApiResponse(data, instruction, imageWidth, imageHeight);
-            } catch (fetchError) {
-                console.error("网络请求错误:", fetchError);
-                
-                // 返回错误信息
+            } catch (error) {
+                console.error("API请求处理错误:", error);
                 return {
                     type: 'text',
-                    content: `API请求失败: ${fetchError.message}。请检查网络连接或API密钥配置，然后重试。`,
+                    content: `处理请求时发生错误: ${error.message}。请重试或检查控制台获取详细信息。`,
                     status: 'error'
                 };
+            } finally {
+                // 确保无论如何都隐藏加载指示器
+                const loadingIndicator = document.getElementById('loading-indicator');
+                if (loadingIndicator) {
+                    loadingIndicator.hidden = true;
+                }
+                console.log("加载指示器已隐藏");
             }
         } catch (error) {
             console.error('处理过程错误:', error);
@@ -178,13 +180,6 @@ class API {
                 content: `处理请求时发生错误: ${error.message}。请重试或检查控制台获取详细信息。`,
                 status: 'error'
             };
-        } finally {
-            // 确保无论如何都隐藏加载指示器
-            const loadingIndicator = document.getElementById('loading-indicator');
-            if (loadingIndicator) {
-                loadingIndicator.hidden = true;
-            }
-            console.log("加载指示器已隐藏");
         }
     }
 
@@ -272,51 +267,68 @@ class API {
             let content = assistantMessage.content || '';
             console.log("AI响应内容:", content);
             
-            // 提取图片URL - 支持不同的格式
+            // 保存最后一次响应数据，用于可能的延迟检查
+            this.lastResponseData = responseData;
+            
+            // 提取图片URL - 支持更多种格式
             let imageUrl = null;
             
+            // 尝试从 content_blocks 获取图片 (GPT-4o 最新格式)
+            if (assistantMessage.content_blocks) {
+                console.log("检测到content_blocks格式...");
+                for (const block of assistantMessage.content_blocks) {
+                    if (block.type === 'image' && block.image && block.image.url) {
+                        imageUrl = block.image.url;
+                        console.log("从content_blocks中提取URL:", imageUrl);
+                        break;
+                    }
+                }
+            }
+            
             // 1. 支持Markdown格式的图片引用: ![desc](url)
-            const markdownImageMatch = content.match(/!\[(.*?)\]\((https?:\/\/[^)]+)\)/);
-            if (markdownImageMatch && markdownImageMatch[2]) {
-                imageUrl = markdownImageMatch[2];
-                console.log("从Markdown图片标记中提取URL:", imageUrl);
+            if (!imageUrl) {
+                const markdownImageMatch = content.match(/!\[.*?\]\((https?:\/\/[^)]+)\)/);
+                if (markdownImageMatch && markdownImageMatch[1]) {
+                    imageUrl = markdownImageMatch[1];
+                    console.log("从Markdown图片标记中提取URL:", imageUrl);
+                }
             }
             
             // 2. 支持纯URL链接
             if (!imageUrl) {
-                const urlMatch = content.match(/https:\/\/\S+?(?=\s|$)/);
+                // 优先匹配https://开头的URL直到空格或引号或括号结束
+                const urlMatch = content.match(/https:\/\/\S+?(?=[\s"')]|$)/);
                 if (urlMatch && urlMatch[0]) {
                     imageUrl = urlMatch[0];
+                    // 确保URL没有残留的引号或括号
+                    imageUrl = imageUrl.replace(/['"()]$/, '');
                     console.log("从纯文本URL中提取:", imageUrl);
                 }
             }
             
-            // 3. 支持sdmntpr开头的OpenAI图片URL
+            // 3. 支持sdmntpr开头的OpenAI图片URL (以及其他OpenAI图片服务域名)
             if (!imageUrl) {
-                const openaiMatch = content.match(/https:\/\/sdmntpr[^"\s)]+/i);
+                const openaiMatch = content.match(/https:\/\/\S*?(?:sdmntpr|media\.instapipe|oaiusercontent)\S*?(?:png|jpg|jpeg|webp|avif)/i);
                 if (openaiMatch && openaiMatch[0]) {
                     imageUrl = openaiMatch[0];
+                    // 清理URL末尾的标点符号
+                    imageUrl = imageUrl.replace(/[.,;:'")\]}>]$/, '');
                     console.log("从OpenAI URL中提取:", imageUrl);
                 }
             }
             
-            // 4. 支持filesystem.site域名的图片URL(特别适用于当前响应)
+            // 4. 支持filesystem.site域名的图片URL
             if (!imageUrl) {
-                const filesystemMatch = content.match(/https:\/\/filesystem\.site\/cdn\/[^"\s)]+/i);
+                const filesystemMatch = content.match(/https:\/\/\S*?filesystem\.site\/\S+?(?:png|jpg|jpeg|webp|avif)/i);
                 if (filesystemMatch && filesystemMatch[0]) {
                     imageUrl = filesystemMatch[0];
+                    // 清理URL末尾的标点符号
+                    imageUrl = imageUrl.replace(/[.,;:'")\]}>]$/, '');
                     console.log("从filesystem.site URL中提取:", imageUrl);
                 }
             }
             
-            // 5. 支持OpenAI文件ID的图片处理
-            if (!imageUrl && assistantMessage.file_ids && assistantMessage.file_ids.length > 0) {
-                const fileId = assistantMessage.file_ids[0];
-                console.log("从file_ids中提取文件ID:", fileId);
-                // 无法直接构建URL，需要API支持
-            }
-            
-            // 6. 支持JSON格式中包含的图片URL(已有逻辑，保留)
+            // 5. 支持JSON格式中包含的图片URL
             if (!imageUrl) {
                 try {
                     const jsonMatch = content.match(/```(?:json)?\s*\n([\s\S]*?)\n```/);
@@ -333,31 +345,74 @@ class API {
                 }
             }
             
-            // 7. 检查gen_id，尝试构建图片URL
-            const genIdMatch = content.match(/gen_id:\s*[`"]?(gen_[a-z0-9]+)[`"]?/i) || content.match(/gen_([a-z0-9]+)/i);
-            if (!imageUrl && genIdMatch && genIdMatch[1]) {
-                const genId = genIdMatch[1];
-                console.log("提取的生成ID:", genId);
+            // 6. 检查gen_id，尝试构建图片URL
+            if (!imageUrl) {
+                // 提升匹配gen_id的能力
+                const genIdPatterns = [
+                    /gen_id:\s*[`"']?(gen_[a-z0-9]+)[`"']?/i,
+                    /\bgen_([a-z0-9]+)\b/i,
+                    /generation_id:\s*[`"']?(gen_[a-z0-9]+)[`"']?/i,
+                    /\b(gen_[a-z0-9]+)\b/i
+                ];
                 
-                // 保存genId供后续使用
-                if (genId && genId !== 'null' && genId !== 'undefined') {
-                    this.lastGenId = genId;
+                let genId = null;
+                for (const pattern of genIdPatterns) {
+                    const match = content.match(pattern);
+                    if (match && match[1]) {
+                        genId = match[1];
+                        break;
+                    }
                 }
                 
-                // 如果有taskId，尝试构建URL
-                if (this.lastTaskId) {
-                    // 构建filesystem.site URL
-                    imageUrl = `https://filesystem.site/vg-assets/assets/${this.lastTaskId}/${genId}.png`;
-                    console.log("基于taskId和genId构建的图片URL:", imageUrl);
+                if (genId) {
+                    console.log("提取的生成ID:", genId);
+                    
+                    // 保存genId供后续使用
+                    if (genId && genId !== 'null' && genId !== 'undefined') {
+                        this.lastGenId = genId;
+                    }
+                    
+                    // 尝试提取taskId
+                    const taskIdPatterns = [
+                        /task_id:\s*[`"']?(task_[a-z0-9]+)[`"']?/i,
+                        /\btask_([a-z0-9]+)\b/i,
+                        /\b(task_[a-z0-9]+)\b/i
+                    ];
+                    
+                    let taskId = null;
+                    for (const pattern of taskIdPatterns) {
+                        const match = content.match(pattern);
+                        if (match && match[1]) {
+                            taskId = match[1];
+                            this.lastTaskId = taskId;
+                            break;
+                        }
+                    }
+                    
+                    // 如果有taskId，尝试构建URL
+                    if (this.lastTaskId) {
+                        // 构建filesystem.site URL
+                        imageUrl = `https://filesystem.site/vg-assets/assets/${this.lastTaskId}/${genId}.png`;
+                        console.log("基于taskId和genId构建的图片URL:", imageUrl);
+                    }
                 }
             }
             
-            // 8. 尝试从下载链接提取URL
+            // 7. 尝试从下载链接提取URL
             if (!imageUrl) {
                 const downloadMatch = content.match(/\[下载[^\]]*\]\((https:\/\/[^)]+)\)/);
                 if (downloadMatch && downloadMatch[1]) {
                     imageUrl = downloadMatch[1];
                     console.log("从下载链接提取URL:", imageUrl);
+                }
+            }
+            
+            // 8. 从错误文本中提取已生成的图片URL
+            if (!imageUrl && content.includes("图片已生成")) {
+                // 如果内容中提到"图片已生成"但没找到URL，检查是否有任务ID和生成ID可用
+                if (this.lastTaskId && this.lastGenId) {
+                    imageUrl = `https://filesystem.site/vg-assets/assets/${this.lastTaskId}/${this.lastGenId}.png`;
+                    console.log("从错误信息中恢复图片URL:", imageUrl);
                 }
             }
             

@@ -3,444 +3,182 @@
  * 处理多步骤图片上传、操作选择、风格选择、处理与展示
  */
 
-// 全局状态变量
+// 全局状态对象
 const state = {
-    // 当前步骤（1-选择操作，2-图片处理，3-选择风格）
     currentStep: 1,
-    
-    // 上传的图片
-    uploadedImage: null,
-    
-    // 选择的操作类型
     selectedOperation: null,
-    
-    // 文字描述（用于一句话生成美图）
-    textDescription: '',
-    
-    // 选择的风格
+    uploadedImages: [], // 改为数组存储多个图片
+    instruction: '',
     selectedStyle: null,
-    
-    // 自定义指令
-    customInstruction: '',
-    
-    // 处理结果
-    processedResult: null,
-    
-    // 是否需要上传图片
-    requiresImage: false,
-    
-    // 图片是否为可选
-    imageOptional: false
+    processingSuccess: false,
+    retryCount: 0
 };
 
-// 示例提示词，根据操作类型提供不同的示例
-const examplePrompts = {
-    // 一句话生成美图的示例提示词
-    generate: [
-        "一只穿着太空服的橙色猫咪漂浮在宇宙中，背景是壮丽的星云和行星",
-        "阳光照耀下的日本京都古街道，樱花盛开，一位穿和服的女子撑着油纸伞走过",
-        "一艘未来科技感十足的宇宙飞船飞过繁星点点的宇宙空间，轨迹形成一道优美的光线"
-    ],
-    
-    // 风格转换的示例提示词
-    style: [
-        "将照片转换为梵高《星空》的绘画风格，保持主体特征",
-        "将图片转换成赛博朋克风格，添加霓虹灯效果和科技感",
-        "将人物照片转换成动漫角色，保持五官特征和表情"
-    ],
-    
-    // 创意生成的示例提示词
-    creative: [
-        "基于上传的猫咪照片，创作一张猫咪成为超级英雄的场景图",
-        "将上传的风景照变成魔幻世界的场景，添加飞龙和神秘城堡",
-        "以上传的人物照片为基础，创作一张十年后的未来版本"
-    ]
-};
+window.state = state;
 
-// 等待DOM加载完成
-document.addEventListener('DOMContentLoaded', function() {
-    // 检查URL参数中是否包含预设风格
-    checkUrlParameters();
-    
-    // 初始化操作选择
-    initOperationSelection();
-    
-    // 初始化上传功能
-    initImageUpload();
-    
-    // 初始化文字描述功能
-    initTextDescription();
-    
-    // 初始化步骤导航
-    initStepNavigation();
-    
-    // 初始化风格选择
-    initStyleSelection();
-    
-    // 初始化处理功能
-    initProcessingAction();
-    
-    // 初始化结果查看功能
-    initResultViewer();
-    
-    // 主题切换功能
-    initThemeToggle();
-    
-    // 强制隐藏预览容器
-    const imagePreview = document.getElementById('image-preview');
-    if (imagePreview) {
-        imagePreview.hidden = true;
-        console.log('已强制隐藏预览容器');
+/**
+ * 检查并启用下一步按钮
+ */
+function checkAndEnableNextButton() {
+    const nextButton = document.getElementById('next-to-step3');
+    if (!nextButton) return;
+
+    // 根据操作类型和状态决定是否启用下一步按钮
+    if (state.selectedOperation === 'generate') {
+        // 生成模式下只需要有文字描述
+        nextButton.disabled = !state.instruction.trim();
+    } else {
+        // 其他模式需要同时有图片和文字描述
+        nextButton.disabled = !(state.uploadedImages.length > 0 && state.instruction.trim());
     }
+}
+
+window.checkAndEnableNextButton = checkAndEnableNextButton;
+
+/**
+ * 处理图片和指令
+ */
+async function processImageWithInstruction() {
+    const processingStatus = document.getElementById('processing-status');
+    const submitBtn = document.getElementById('submit-btn');
     
-    // 调试：检查步骤内容是否显示
-    setTimeout(() => {
-        const activeStep = document.querySelector('.step-content.active');
-        if (activeStep) {
-            console.log('当前活跃步骤:', activeStep.id);
-            console.log('可见性状态:', activeStep.style.display);
-            const compStyle = window.getComputedStyle(activeStep);
-            console.log('计算样式:', {
-                display: compStyle.display,
-                opacity: compStyle.opacity,
-                height: compStyle.height,
-                maxHeight: compStyle.maxHeight,
-                overflow: compStyle.overflow,
-                visibility: compStyle.visibility
+    try {
+        submitBtn.disabled = true;
+        processingStatus.textContent = '正在处理...';
+        
+        // 获取选中的图片
+        const selectedImages = Array.from(document.querySelectorAll('.preview-item.selected'))
+            .map(item => state.uploadedImages.find(img => img.name === item.dataset.filename))
+            .filter(Boolean);
+        
+        if (state.selectedOperation !== 'generate' && selectedImages.length === 0) {
+            throw new Error('请选择要处理的图片');
+        }
+
+        // 显示加载指示器
+        showLoadingIndicator('正在处理图片...');
+        
+        // 创建进度条
+        createProgressBar();
+
+        // 根据操作类型构建请求数据
+        const requestData = {
+            operation: state.selectedOperation,
+            instruction: state.instruction || '',
+            style: state.selectedStyle,
+            images: selectedImages
+        };
+
+        // 调用API处理图片
+        const response = await window.API.processImageWithInstruction(requestData);
+        
+        if (response.success) {
+            state.processingSuccess = true;
+            processingStatus.textContent = '处理完成！';
+            
+            // 更新进度条为完成状态
+            updateProgressBar(100, '处理完成');
+            
+            // 显示结果
+            showResultView(response);
+        } else {
+            throw new Error(response.error || '处理失败，请重试');
+        }
+    } catch (error) {
+        console.error('处理失败:', error);
+        processingStatus.textContent = `处理失败: ${error.message}`;
+        
+        // 更新进度条为错误状态
+        updateProgressBar(0, '处理失败');
+        
+        // 显示错误信息
+        handleApiFailure(state.selectedOperation, error.message);
+        
+        submitBtn.disabled = false;
+    } finally {
+        // 隐藏加载指示器
+        hideLoadingIndicator();
+    }
+}
+
+/**
+ * 显示处理结果
+ */
+function showResultView(response) {
+    const resultView = document.getElementById('result-view');
+    const originalImagesContainer = document.getElementById('original-images');
+    const processedImagesContainer = document.getElementById('processed-images');
+    
+    // 清空容器
+    originalImagesContainer.innerHTML = '';
+    processedImagesContainer.innerHTML = '';
+    
+    if (state.selectedOperation === 'generate') {
+        // 生成模式下只显示生成的图片
+        originalImagesContainer.style.display = 'none';
+        processedImagesContainer.style.display = 'grid';
+        
+        // 添加生成的图片
+        if (Array.isArray(response.results)) {
+            response.results.forEach(result => {
+                const imgContainer = document.createElement('div');
+                imgContainer.className = 'result-image-container';
+                
+                const img = document.createElement('img');
+                img.src = result.url;
+                img.alt = '生成的图片';
+                
+                const downloadBtn = document.createElement('button');
+                downloadBtn.className = 'download-btn';
+                downloadBtn.innerHTML = '<span class="material-symbols-rounded">download</span>';
+                downloadBtn.onclick = () => downloadImage(result.url);
+                
+                imgContainer.appendChild(img);
+                imgContainer.appendChild(downloadBtn);
+                processedImagesContainer.appendChild(imgContainer);
             });
-        } else {
-            console.error('无活跃步骤内容！');
-            // 强制显示第一步
-            const step1 = document.getElementById('step-1');
-            if (step1) {
-                step1.style.display = 'block';
-                step1.classList.add('active');
-                console.log('已强制激活第一步');
-            }
         }
-    }, 500);
-});
-
-/**
- * 检查URL参数中是否包含预设风格
- */
-function checkUrlParameters() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const styleParam = urlParams.get('style');
-    
-    if (styleParam) {
-        // 存储预设风格，后续在到达步骤3时自动选择
-        state.presetStyle = styleParam;
-    }
-    
-    // 确保首页加载时，第一个步骤内容可见
-    const step1Content = document.getElementById('step-1');
-    if (step1Content) {
-        step1Content.style.display = 'block';
-        step1Content.classList.add('active');
-        console.log("已激活第一步内容");
-    }
-}
-
-/**
- * 初始化主题切换功能
- * 添加炫酷的白天/黑夜切换动画效果
- */
-function initThemeToggle() {
-    const themeToggleBtn = document.getElementById('theme-toggle-btn');
-    let isAnimating = false; // 防止动画期间重复点击
-    
-    // 检查本地存储中的主题设置
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme === 'dark') {
-        document.documentElement.classList.add('dark-theme');
-        document.body.classList.add('dark-theme');
     } else {
-        document.documentElement.classList.remove('dark-theme');
-        document.body.classList.remove('dark-theme');
-    }
-
-    // 创建主题切换动画覆盖层
-    const themeOverlay = document.createElement('div');
-    themeOverlay.className = 'theme-toggle-animation';
-    document.body.appendChild(themeOverlay);
-    
-    // 添加主题切换按钮点击事件
-    themeToggleBtn.addEventListener('click', function(e) {
-        e.preventDefault(); // 防止默认行为
+        // 其他模式显示原图和处理后的图片
+        originalImagesContainer.style.display = 'grid';
+        processedImagesContainer.style.display = 'grid';
         
-        // 立即切换主题，确保响应迅速
-        const isDarkMode = document.body.classList.contains('dark-theme');
-        const newTheme = isDarkMode ? 'light' : 'dark';
+        // 添加原图
+        const selectedImages = Array.from(document.querySelectorAll('.preview-item.selected'));
+        selectedImages.forEach(previewItem => {
+            const img = previewItem.querySelector('img');
+            const clone = img.cloneNode(true);
+            clone.className = 'original-image';
+            originalImagesContainer.appendChild(clone);
+        });
         
-        // 立即应用新主题，让用户马上看到变化
-        if (isDarkMode) {
-            document.documentElement.classList.remove('dark-theme');
-            document.body.classList.remove('dark-theme');
-        } else {
-            document.documentElement.classList.add('dark-theme');
-            document.body.classList.add('dark-theme');
+        // 添加处理后的图片
+        if (Array.isArray(response.results)) {
+            response.results.forEach(result => {
+                const imgContainer = document.createElement('div');
+                imgContainer.className = 'result-image-container';
+                
+                const img = document.createElement('img');
+                img.src = result.url;
+                img.alt = '处理后的图片';
+                
+                const downloadBtn = document.createElement('button');
+                downloadBtn.className = 'download-btn';
+                downloadBtn.innerHTML = '<span class="material-symbols-rounded">download</span>';
+                downloadBtn.onclick = () => downloadImage(result.url);
+                
+                imgContainer.appendChild(img);
+                imgContainer.appendChild(downloadBtn);
+                processedImagesContainer.appendChild(imgContainer);
+            });
         }
-        
-        // 立即保存到localStorage
-        localStorage.setItem('theme', newTheme);
-        
-        // 仅在非动画状态下创建新的动画效果
-        if (!isAnimating) {
-            isAnimating = true;
-            
-            // 添加炫酷漩涡特效
-            createVortexEffect(isDarkMode);
-            
-            // 添加适当的过渡动画类
-            themeOverlay.className = 'theme-toggle-animation';
-            themeOverlay.classList.add(isDarkMode ? 'to-light' : 'to-dark');
-            
-            // 添加涟漪效果
-            createRippleEffect(themeToggleBtn, isDarkMode);
-            
-            // 创建动画元素
-            createThemeTransitionElements(isDarkMode);
-            
-            // 创建闪光特效
-            createSparkleEffect(themeToggleBtn, 15, isDarkMode);
-            
-            // 动画完成后清理
-            setTimeout(() => {
-                isAnimating = false;
-                // 删除所有动画元素
-                document.querySelectorAll('.theme-animation-element').forEach(el => el.remove());
-            }, 800); // 缩短动画时间，让切换更丝滑
-        }
-    });
-}
-
-/**
- * 创建主题切换过渡动画元素
- * @param {boolean} isDarkMode - 当前是否为深色模式
- */
-function createThemeTransitionElements(isDarkMode) {
-    // 清除旧的动画元素
-    document.querySelectorAll('.theme-animation-element').forEach(el => el.remove());
+    }
     
-    const themeToggleBtn = document.getElementById('theme-toggle-btn');
-    const btnRect = themeToggleBtn.getBoundingClientRect();
-    const centerX = btnRect.left + btnRect.width / 2;
-    const centerY = btnRect.top + btnRect.height / 2;
+    // 显示结果视图
+    resultView.hidden = false;
     
-    if (isDarkMode) {
-        // 从黑夜到白天的动画：太阳光芒、云朵
-        createSunRays(centerX, centerY);
-        createClouds(centerX, centerY);
-    } else {
-        // 从白天到黑夜的动画：星星、月亮
-        createStars(centerX, centerY);
-        createMoonCraters(centerX, centerY);
-        createTwinkleStars(centerX, centerY);
-    }
-}
-
-/**
- * 创建漩涡特效
- * @param {boolean} isDarkMode - 当前是否为深色模式
- */
-function createVortexEffect(isDarkMode) {
-    const vortex = document.createElement('div');
-    vortex.className = 'theme-vortex theme-animation-element';
-    if (!isDarkMode) {
-        vortex.classList.add('dark-vortex');
-    }
-    document.body.appendChild(vortex);
-    
-    // 添加后自动移除
-    setTimeout(() => {
-        vortex.remove();
-    }, 700);
-}
-
-/**
- * 创建涟漪效果
- * @param {HTMLElement} btn - 触发按钮
- * @param {boolean} isDarkMode - 当前是否为深色模式
- */
-function createRippleEffect(btn, isDarkMode) {
-    const rect = btn.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    
-    for (let i = 0; i < 3; i++) {
-        const ripple = document.createElement('div');
-        ripple.className = 'ripple theme-animation-element';
-        ripple.style.left = `${centerX}px`;
-        ripple.style.top = `${centerY}px`;
-        ripple.style.borderColor = isDarkMode ? '#ffb74d' : '#86a8e7';
-        ripple.style.animationDelay = `${i * 0.15}s`;
-        document.body.appendChild(ripple);
-    }
-}
-
-/**
- * 创建闪光特效
- * @param {HTMLElement} btn - 触发按钮
- * @param {number} count - 闪光数量
- * @param {boolean} isDarkMode - 当前是否为深色模式
- */
-function createSparkleEffect(btn, count, isDarkMode) {
-    const rect = btn.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    
-    for (let i = 0; i < count; i++) {
-        setTimeout(() => {
-            const sparkle = document.createElement('div');
-            sparkle.className = 'sparkle theme-animation-element';
-            
-            // 随机位置
-            const angle = Math.random() * Math.PI * 2;
-            const distance = 30 + Math.random() * 100;
-            const x = centerX + Math.cos(angle) * distance;
-            const y = centerY + Math.sin(angle) * distance;
-            
-            sparkle.style.left = `${x}px`;
-            sparkle.style.top = `${y}px`;
-            
-            // 设置颜色
-            if (isDarkMode) {
-                sparkle.style.backgroundColor = '#ffb74d';
-                sparkle.style.boxShadow = '0 0 10px rgba(255, 183, 77, 0.8)';
-            } else {
-                sparkle.style.backgroundColor = '#86a8e7';
-                sparkle.style.boxShadow = '0 0 10px rgba(134, 168, 231, 0.8)';
-            }
-            
-            document.body.appendChild(sparkle);
-            
-            // 自动移除
-            setTimeout(() => {
-                sparkle.remove();
-            }, 600);
-        }, i * 20);
-    }
-}
-
-/**
- * 创建闪烁星星
- */
-function createTwinkleStars(x, y) {
-    for (let i = 0; i < 5; i++) {
-        const star = document.createElement('div');
-        star.className = 'twinkle-star theme-animation-element';
-        
-        const size = 1 + Math.random() * 2;
-        const distance = 60 + Math.random() * 100;
-        const angle = Math.random() * Math.PI * 2;
-        const offsetX = Math.cos(angle) * distance;
-        const offsetY = Math.sin(angle) * distance;
-        
-        star.style.width = `${size}px`;
-        star.style.height = `${size}px`;
-        star.style.left = `${x + offsetX}px`;
-        star.style.top = `${y + offsetY}px`;
-        star.style.animationDelay = `${Math.random() * 1}s`;
-        
-        document.body.appendChild(star);
-    }
-}
-
-/**
- * 创建太阳光芒动画
- */
-function createSunRays(x, y) {
-    const container = document.createElement('div');
-    container.className = 'theme-animation-element toggle-rays';
-    document.body.appendChild(container);
-    
-    // 创建8个光芒
-    for (let i = 0; i < 8; i++) {
-        const ray = document.createElement('div');
-        ray.className = 'light-ray theme-animation-element';
-        
-        const length = 40 + Math.random() * 30;
-        const angle = (i * 45) * (Math.PI / 180);
-        
-        ray.style.width = `${length}px`;
-        ray.style.left = `${x}px`;
-        ray.style.top = `${y}px`;
-        ray.style.transform = `rotate(${i * 45}deg)`;
-        ray.style.animationDelay = `${0.1 + i * 0.05}s`;
-        
-        document.body.appendChild(ray);
-    }
-}
-
-/**
- * 创建云朵动画
- */
-function createClouds(x, y) {
-    for (let i = 0; i < 3; i++) {
-        const cloud = document.createElement('div');
-        cloud.className = 'cloud theme-animation-element';
-        
-        const size = 20 + Math.random() * 15;
-        const offsetX = -40 + Math.random() * 80;
-        const offsetY = -40 + Math.random() * 30;
-        
-        cloud.style.width = `${size}px`;
-        cloud.style.height = `${size / 2}px`;
-        cloud.style.left = `${x + offsetX}px`;
-        cloud.style.top = `${y + offsetY}px`;
-        cloud.style.animationDelay = `${0.3 + i * 0.2}s`;
-        
-        document.body.appendChild(cloud);
-    }
-}
-
-/**
- * 创建星星动画
- */
-function createStars(x, y) {
-    for (let i = 0; i < 12; i++) {
-        const star = document.createElement('div');
-        star.className = 'star theme-animation-element';
-        
-        const size = 2 + Math.random() * 3;
-        const distance = 30 + Math.random() * 50;
-        const angle = Math.random() * Math.PI * 2;
-        const offsetX = Math.cos(angle) * distance;
-        const offsetY = Math.sin(angle) * distance;
-        
-        star.style.width = `${size}px`;
-        star.style.height = `${size}px`;
-        star.style.left = `${x + offsetX}px`;
-        star.style.top = `${y + offsetY}px`;
-        star.style.animationDelay = `${i * 0.08}s`;
-        
-        document.body.appendChild(star);
-    }
-}
-
-/**
- * 创建月球环形山动画
- */
-function createMoonCraters(x, y) {
-    for (let i = 0; i < 4; i++) {
-        const crater = document.createElement('div');
-        crater.className = 'moon-crater theme-animation-element';
-        
-        const size = 3 + Math.random() * 5;
-        const angle = Math.random() * Math.PI * 2;
-        const distance = 10 + Math.random() * 15;
-        const offsetX = Math.cos(angle) * distance;
-        const offsetY = Math.sin(angle) * distance;
-        
-        crater.style.width = `${size}px`;
-        crater.style.height = `${size}px`;
-        crater.style.left = `${x + offsetX}px`;
-        crater.style.top = `${y + offsetY}px`;
-        crater.style.animationDelay = `${0.2 + i * 0.1}s`;
-        
-        document.body.appendChild(crater);
-    }
+    // 更新结果描述
+    updateResultDescription(response);
 }
 
 /**
@@ -647,188 +385,16 @@ function initTextDescription() {
  * 检查并启用下一步按钮
  */
 function checkAndEnableNextButton() {
-    const nextToStep3Btn = document.getElementById('next-to-step3');
-    
-    // 如果按钮不存在，直接返回
-    if (!nextToStep3Btn) {
-        console.error('未找到下一步按钮元素');
-        return;
-    }
-    
-    switch(state.selectedOperation) {
-        case 'generate':
-            // 一句话生成美图 - 有文字描述就可以继续
-            nextToStep3Btn.disabled = !state.textDescription;
-            break;
-        case 'style':
-            // 风格转换 - 必须有图片
-            nextToStep3Btn.disabled = !state.uploadedImage;
-            break;
-        case 'creative':
-            // 创意生成 - 只要有图片就可以继续，文字描述在步骤3添加
-            nextToStep3Btn.disabled = !state.uploadedImage;
-            break;
-        default:
-            // 没有选择操作类型，禁用按钮
-            nextToStep3Btn.disabled = true;
-    }
-}
+    const nextButton = document.getElementById('next-to-step3');
+    if (!nextButton) return;
 
-/**
- * 初始化图片上传功能
- */
-function initImageUpload() {
-    const uploadArea = document.getElementById('upload-area');
-    const fileInput = document.getElementById('file-input');
-    const imagePreview = document.getElementById('image-preview');
-    const previewImage = document.getElementById('preview-image');
-    const removeImageBtn = document.getElementById('remove-image');
-    const nextToStep3Btn = document.getElementById('next-to-step3');
-    
-    // 检查必要的DOM元素是否存在
-    if (!uploadArea || !fileInput || !imagePreview || !previewImage || !removeImageBtn) {
-        console.error('图片上传功能初始化失败：未找到所需DOM元素');
-        return;
-    }
-    
-    // 确保初始状态下预览容器是隐藏的
-    imagePreview.hidden = true;
-    previewImage.src = '';
-    
-    const uploadBtn = uploadArea.querySelector('.upload-btn');
-    if (!uploadBtn) {
-        console.error('未找到上传按钮元素');
-        return;
-    }
-    
-    // 点击上传按钮时触发文件选择 - 直接使用点击事件，不使用事件委托
-    uploadBtn.onclick = function(e) {
-        e.preventDefault(); // 阻止默认行为
-        e.stopPropagation(); // 阻止冒泡
-        console.log("上传按钮被点击");
-        fileInput.click();
-    };
-    
-    // 监听文件选择变化
-    fileInput.addEventListener('change', function(e) {
-        console.log("检测到文件选择变化");
-        if (this.files && this.files.length > 0) {
-            handleFileSelect(this.files);
-        }
-    });
-    
-    // 拖放功能
-    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-        uploadArea.addEventListener(eventName, preventDefaults, false);
-    });
-    
-    function preventDefaults(e) {
-        e.preventDefault();
-        e.stopPropagation();
-    }
-    
-    // 拖拽悬停效果
-    ['dragenter', 'dragover'].forEach(eventName => {
-        uploadArea.addEventListener(eventName, function() {
-            uploadArea.classList.add('dragover');
-        });
-    });
-    
-    ['dragleave', 'drop'].forEach(eventName => {
-        uploadArea.addEventListener(eventName, function() {
-            uploadArea.classList.remove('dragover');
-        });
-    });
-    
-    // 处理拖放文件
-    uploadArea.addEventListener('drop', function(e) {
-        console.log("检测到文件拖放");
-        const files = e.dataTransfer.files;
-        if (files && files.length > 0) {
-        handleFileSelect(files);
-        }
-    });
-    
-    // 移除图片按钮
-    removeImageBtn.addEventListener('click', function() {
-        state.uploadedImage = null;
-        imagePreview.hidden = true;
-        
-        const uploadInner = uploadArea.querySelector('.upload-inner');
-        if (uploadInner) {
-            uploadInner.style.display = 'block';
-        }
-        
-        checkAndEnableNextButton();
-        fileInput.value = '';
-    });
-    
-    /**
-     * 处理文件选择
-     * @param {FileList} files - 选择的文件列表
-     */
-    function handleFileSelect(files) {
-        if (!files || files.length === 0) {
-            console.error('未选择文件');
-            return;
-        }
-        
-        const file = files[0];
-        console.log("处理选择的文件:", file.name, file.type, file.size);
-        
-        // 检查文件类型
-        if (!file.type.match('image.*')) {
-            showToast('请选择图片文件（JPG、PNG或GIF）', 'error');
-            return;
-        }
-        
-        // 检查文件大小（10MB限制）
-        if (file.size > 10 * 1024 * 1024) {
-            showToast('图片大小超出限制（最大10MB）', 'error');
-            return;
-        }
-        
-        // 存储上传的图片
-        state.uploadedImage = file;
-        
-        // 创建预览
-        const reader = new FileReader();
-        const uploadArea = document.getElementById('upload-area');
-        const imagePreview = document.getElementById('image-preview');
-        const previewImage = document.getElementById('preview-image');
-        
-        if (!uploadArea || !imagePreview || !previewImage) {
-            console.error('预览图片所需的DOM元素不存在');
-            return;
-        }
-        
-        reader.onload = function(e) {
-            // 先设置图片源，确保图片正确加载
-            previewImage.src = e.target.result;
-            
-            // 隐藏上传区域，显示预览区域
-            const uploadInner = uploadArea.querySelector('.upload-inner');
-            if (uploadInner) {
-                uploadInner.style.display = 'none';
-            }
-            
-            // 确保预览区域可见
-            imagePreview.hidden = false;
-        
-            // 显示成功提示
-        showToast('图片上传成功', 'success');
-            
-            // 根据操作类型检查是否启用下一步按钮
-            checkAndEnableNextButton();
-        };
-        
-        reader.onerror = function() {
-            console.error('读取文件失败');
-            showToast('读取文件失败，请重试', 'error');
-        };
-        
-        // 开始读取文件
-        reader.readAsDataURL(file);
+    // 根据操作类型和状态决定是否启用下一步按钮
+    if (state.selectedOperation === 'generate') {
+        // 生成模式下只需要有文字描述
+        nextButton.disabled = !state.instruction.trim();
+    } else {
+        // 其他模式需要同时有图片和文字描述
+        nextButton.disabled = !(state.uploadedImages.length > 0 && state.instruction.trim());
     }
 }
 
@@ -914,183 +480,108 @@ function initStepNavigation() {
  */
 function goToStep(step) {
     try {
-        console.log(`切换到步骤 ${step}`);
+        console.log(`切换到步骤 ${step}，当前操作类型: ${state.selectedOperation}`);
         
     // 保存当前步骤
     const prevStep = state.currentStep;
     state.currentStep = step;
     
-    // 更新步骤指示器状态
-    const stepIndicators = document.querySelectorAll('.step-indicator');
-    stepIndicators.forEach(indicator => {
-        const indicatorStep = parseInt(indicator.getAttribute('data-step'));
-        indicator.classList.remove('active', 'complete');
-        
-        if (indicatorStep < step) {
-            indicator.classList.add('complete');
-        } else if (indicatorStep === step) {
-            indicator.classList.add('active');
-        }
-    });
-    
-    // 更新步骤连接器状态
-    updateStepConnectors();
-    
-    // 显示当前步骤内容
+        // 隐藏所有步骤
     const stepContents = document.querySelectorAll('.step-content');
     stepContents.forEach(content => {
         content.classList.remove('active');
-            content.style.display = 'none';
-        });
+        content.style.display = 'none';
+    });
         
+        // 显示目标步骤
         const targetStep = document.getElementById(`step-${step}`);
         if (targetStep) {
-            targetStep.style.display = 'block';
             targetStep.classList.add('active');
+            targetStep.style.display = 'block';
+            console.log(`成功切换到步骤${step}`);
         } else {
-            console.error(`未找到步骤${step}的内容元素`);
-            return;
-        }
-        
-        // 步骤3特殊处理 - 根据操作类型更新UI
-        if (step === 3) {
-            // 获取步骤3的标题和描述元素
-            const stepTitle = document.querySelector('#step-3 .step-title');
-            const stepDesc = document.querySelector('#step-3 .step-description');
-            const styleOptions = document.querySelector('.style-options');
-            const advancedStyleOptions = document.querySelector('.advanced-style-options');
-            const styleCustomizationArea = document.getElementById('style-customization-area');
-            
-            // 进行非空检查，避免空引用错误
-            if (!styleOptions || !advancedStyleOptions) {
-                console.error('未找到风格选项元素');
+            console.error(`未找到步骤${step}的内容元素，ID: step-${step}`);
+            // 尝试直接通过索引查找
+            const allStepContents = document.querySelectorAll('.step-content');
+            if (allStepContents.length >= step && step > 0) {
+                const stepContent = allStepContents[step - 1];
+                stepContent.classList.add('active');
+                stepContent.style.display = 'block';
+                console.log(`通过索引找到并激活步骤${step}`);
+            } else {
                 return;
             }
+        }
+        
+        // 更新步骤指示器状态
+        const stepIndicators = document.querySelectorAll('.step-indicator');
+        stepIndicators.forEach(indicator => {
+            const indicatorStep = parseInt(indicator.getAttribute('data-step'));
+            indicator.classList.remove('active', 'complete');
             
-            console.log(`步骤3：当前操作类型 - ${state.selectedOperation}`);
-            
-            // 移动文字描述区域到步骤3（如果需要）
-            const textDescriptionArea = document.getElementById('text-description-area');
-            if (textDescriptionArea) {
-                // 当操作类型为创意生成或一句话生成模式时，将文字描述区域移动到步骤3
-                if (state.selectedOperation === 'creative' || state.selectedOperation === 'generate') {
-                    // 保存原始文字描述
-                    const originalDescription = document.getElementById('image-description').value;
-                    
-                    // 将文字描述区域移动到步骤3的合适位置
-                    const step3Content = document.getElementById('step-3');
-                    if (step3Content) {
-                        // 首先检查文字描述区域是否已经在步骤3中
-                        const existingDescArea = step3Content.querySelector('#text-description-area');
-                        if (!existingDescArea) {
-                            // 对于创意生成，将文字描述区域放在高级风格选项后面
-                            if (state.selectedOperation === 'creative') {
-                                if (advancedStyleOptions && advancedStyleOptions.nextSibling) {
-                                    step3Content.insertBefore(textDescriptionArea, advancedStyleOptions.nextSibling);
-                                } else {
-                                    // 如果高级风格选项是最后一个元素，就添加到末尾
-                                    step3Content.appendChild(textDescriptionArea);
-                                }
-                            } else {
-                                // 对于一句话生成，放在开头
-                                step3Content.insertBefore(textDescriptionArea, step3Content.firstChild.nextSibling.nextSibling);
-                            }
-                            
-                            textDescriptionArea.style.display = 'block';
-                            
-                            // 更新文字描述区域的标题和提示文本
-                            if (state.selectedOperation === 'creative') {
-                                const descTitle = textDescriptionArea.querySelector('.description-title');
-                                if (descTitle) {
-                                    descTitle.textContent = '补充创意描述和自定义指令';
-                                }
-                                
-                                const descHint = textDescriptionArea.querySelector('.description-hint');
-                                if (descHint) {
-                                    descHint.textContent = '选择创意风格后将自动添加创意指令，您可根据需要修改';
-                                }
-                            }
-                            
-                            // 恢复已输入的文字描述
-                            document.getElementById('image-description').value = originalDescription;
-                        } else {
-                            // 如果已经存在，只需显示它
-                            existingDescArea.style.display = 'block';
-                        }
-                    }
-                }
+            if (indicatorStep < step) {
+                indicator.classList.add('complete');
+            } else if (indicatorStep === step) {
+                indicator.classList.add('active');
             }
+        });
+        
+        // 更新步骤连接器状态
+        updateStepConnectors();
+        
+        // 处理导航按钮
+        const prevStepBtn = document.getElementById('back-to-step' + (step - 1));
+        const nextToStep3Btn = document.getElementById('next-to-step3');
+        
+        // 显示/隐藏上一步按钮
+        if (prevStepBtn) {
+            prevStepBtn.style.display = 'flex';
+        }
+        
+        // 控制下一步按钮状态
+        if (nextToStep3Btn && step === 2) {
+            // 恢复显示下一步按钮
+            nextToStep3Btn.style.display = 'flex';
             
-            // 根据操作类型显示不同内容
-            if (state.selectedOperation === 'style') {
-                // 显示常规风格选项，隐藏高级创意风格
-                styleOptions.style.display = 'grid';
-                advancedStyleOptions.style.display = 'none';
-                if (stepTitle) stepTitle.textContent = '选择风格';
-                if (stepDesc) stepDesc.textContent = '选择您想要转换成的艺术风格';
-                
-                // 显示自定义风格指令区域
-                if (styleCustomizationArea) {
-                    styleCustomizationArea.style.display = 'block';
-                }
-                
-                // 隐藏文字描述区域（如果存在）
-                if (textDescriptionArea) {
-                    textDescriptionArea.style.display = 'none';
-                }
-            } else if (state.selectedOperation === 'creative') {
-                // 隐藏常规风格选项，显示高级创意风格
-                styleOptions.style.display = 'none';
-                advancedStyleOptions.style.display = 'block';
-                
-                // 隐藏自定义风格指令区域
-                if (styleCustomizationArea) {
-                    styleCustomizationArea.style.display = 'none';
-                }
-                
-                if (stepTitle) stepTitle.textContent = '选择创意模式';
-                if (stepDesc) stepDesc.textContent = '选择一种高阶创意风格，系统将自动生成对应提示词';
-                
-                // 修改高级风格选项标题和描述
-                const advancedOptionsTitle = advancedStyleOptions.querySelector('.advanced-options-title');
-                const advancedOptionsDesc = advancedStyleOptions.querySelector('.advanced-options-desc');
-                
-                if (advancedOptionsTitle) {
-                    advancedOptionsTitle.textContent = '创意风格选择';
-                }
-                
-                if (advancedOptionsDesc) {
-                    advancedOptionsDesc.textContent = '选择以下创意风格之一，系统将根据您的上传图片生成创意效果';
-                }
-            } else {
-                // 默认显示所有风格选项
-                styleOptions.style.display = 'grid';
-                advancedStyleOptions.style.display = 'block';
-                if (stepTitle) stepTitle.textContent = '选择效果';
-                if (stepDesc) stepDesc.textContent = '选择您想要的生成效果并添加详细描述';
-            }
-            
-            // 检查是否预设了风格
-            if (state.presetStyle && !state.selectedStyle) {
-                const styleSelector = state.selectedOperation === 'style' 
-                    ? `.style-option[data-style="${state.presetStyle}"]`
-                    : `.creative-style-option[data-style="${state.presetStyle}"]`;
-                
-                const styleOption = document.querySelector(styleSelector);
-                if (styleOption) {
-                    styleOption.click();
-                }
+            // 根据操作类型和状态更新按钮启用状态
+            console.log(`步骤2：检查按钮状态，操作类型: ${state.selectedOperation}, 已上传图片: ${!!state.uploadedImages.length}`);
+            switch(state.selectedOperation) {
+                case 'generate':
+                    // 生成模式下只需要有文字描述
+                    nextToStep3Btn.disabled = !state.instruction.trim();
+                    break;
+                case 'style':
+                    // 风格转换 - 必须有图片，但不需要预先选择风格
+                    nextToStep3Btn.disabled = !(state.uploadedImages.length > 0);
+                    break;
+                case 'creative':
+                    // 创意生成 - 只要有图片就可以继续，文字描述可选
+                    nextToStep3Btn.disabled = !(state.uploadedImages.length > 0);
+                    break;
+                default:
+                    // 没有选择操作类型，禁用按钮
+                    nextToStep3Btn.disabled = true;
             }
         }
         
-        // 触发步骤变化自定义事件
-        const stepChangeEvent = new CustomEvent('stepchange', {
-            detail: { prevStep, currentStep: step },
-            bubbles: true
-        });
-        document.dispatchEvent(stepChangeEvent);
+        // 步骤3特殊处理
+        if (step === 3) {
+            // 调用专门的函数处理步骤3的UI
+            updateStep3UI();
+        }
+        
+        // 触发自定义步骤变化事件，通知其他组件
+        document.dispatchEvent(new CustomEvent('stepchange', { 
+            detail: { 
+                prevStep: prevStep,
+                currentStep: step 
+            } 
+        }));
+        
+        return true;
     } catch (error) {
-        console.error(`步骤切换错误（步骤${step}）:`, error);
+        console.error('切换步骤时出错:', error);
+        return false;
     }
 }
 
@@ -1306,7 +797,7 @@ function initProcessingAction() {
     startProcessingBtn.addEventListener('click', async function() {
         try {
             // 获取当前的图片和指令
-            const imageData = state.uploadedImage;
+            const imageData = state.uploadedImages;
             const operation = state.selectedOperation;
             
             // 构建指令内容
@@ -1382,9 +873,8 @@ function initProcessingAction() {
                 image: imageData ? '已上传' : '无'
             });
             
-            // 处理重试逻辑变量
-            const maxRetries = 1; // 最大重试次数
-            let currentRetry = 0;
+            // 禁用重试逻辑，防止多次调用API
+            const maxRetries = 0; // 设为0表示禁用重试
             let processingSuccess = false;
             const timeoutSeconds = 180; // API最大等待时间
             
@@ -1433,7 +923,6 @@ function initProcessingAction() {
                 }
             }, 15000); // 每15秒更新一次模拟进度
 
-            while (currentRetry < maxRetries && !processingSuccess) {
                 try {
                     // 创建带超时的Promise
                     const apiResponsePromise = new Promise(async (resolve, reject) => {
@@ -1445,9 +934,24 @@ function initProcessingAction() {
                             
                             // 调用API
                             let response;
-                            if (imageData) {
-                                response = await window.API.processImageWithInstruction(imageData, instruction);
+                            if (imageData && imageData.length > 0) {
+                                // 获取选中的图片，如果没有选中则使用第一张
+                                const selectedImages = document.querySelectorAll('.preview-item.selected');
+                                let selectedImage;
+                                
+                                if (selectedImages.length > 0) {
+                                    // 使用选中的第一张图片
+                                    const filename = selectedImages[0].dataset.filename;
+                                    selectedImage = imageData.find(img => img.name === filename);
+                                } else {
+                                    // 如果没有选中的图片，使用第一张上传的图片
+                                    selectedImage = imageData[0];
+                                }
+                                
+                                console.log('将发送图片到API:', selectedImage.name);
+                                response = await window.API.processImageWithInstruction(selectedImage, instruction);
                             } else {
+                                console.log('无图片数据，只发送文本指令');
                                 response = await window.API.processImageWithInstruction(null, instruction);
                             }
                             
@@ -1516,7 +1020,6 @@ function initProcessingAction() {
                     // 用于存储最后一次API响应，即使超时也可能有部分结果
                     let lastApiResponse = null;
                     
-                    try {
                         // 等待API响应
                         const apiResponse = await apiResponsePromise;
                         lastApiResponse = apiResponse;
@@ -1525,7 +1028,7 @@ function initProcessingAction() {
                         
                         // 检查API响应是否成功
                         if (apiResponse.status === 'error') {
-                            throw new Error(apiResponse.content || '处理请求失败，正在重试...');
+                    throw new Error(apiResponse.content || '处理请求失败');
                         }
                         
                         // 提取处理结果
@@ -1544,140 +1047,97 @@ function initProcessingAction() {
                             if (apiResponse.taskId) state.taskId = apiResponse.taskId;
                             if (apiResponse.genId) state.genId = apiResponse.genId;
                             
-                            // 检查图片URL是否有效（必须是http开头的URL）
+                    // 检查图片URL是否有效（必须是http开头的URL）
                             if (!state.processedImage || 
-                                !state.processedImage.startsWith('http')) {
-                                throw new Error('API返回的图片URL无效，正在重试...');
-                            }
-                            
-                            // 标记处理成功
-                            processingSuccess = true;
-                            
-                            // 将进度更新到100%
-                            updateProgressBar(100, '处理完成！');
-                        } else if (apiResponse.type === 'progress') {
-                            // 收到进度信息但没有最终结果
-                            state.processDescription = apiResponse.content || '处理中，但尚未完成，请等待...';
-                            updateProgressBar(apiResponse.percentage || 50, state.processDescription);
-                            
-                            // 保存任务ID，用于后续查询
-                            if (apiResponse.taskId) state.taskId = apiResponse.taskId;
-                            if (apiResponse.genId) state.genId = apiResponse.genId;
-                            
-                            throw new Error('API返回的是进度信息，但未能获取最终结果，正在重试...');
-                        } else {
-                            // 只有文字，可能无法获取图片
-                            state.processDescription = apiResponse.content || '处理完成，但无法获取处理后的图片';
-                            
-                            // 保存可能的任务ID和生成ID
-                            if (apiResponse.raw && apiResponse.raw.choices && apiResponse.raw.choices.length > 0) {
-                                const content = apiResponse.raw.choices[0].message.content || '';
-                                
-                                // 尝试从内容中提取JSON代码块
-                                const jsonMatch = content.match(/```(?:json)?\s*\n([\s\S]*?)\n```/);
-                                if (jsonMatch && jsonMatch[1]) {
-                                    try {
-                                        const jsonData = JSON.parse(jsonMatch[1].trim());
-                                        if (jsonData.gen_id) {
-                                            state.genId = jsonData.gen_id;
-                                            console.log("从JSON中提取的生成ID:", state.genId);
-                                        }
-                                    } catch (e) {
-                                        console.warn("解析JSON失败:", e);
-                                    }
-                                }
-                                
-                                // 直接从内容中尝试提取
-                                const taskIdMatch = content.match(/task_[a-z0-9]+/i);
-                                const genIdMatch = content.match(/gen_[a-z0-9]+/i);
-                                
-                                if (taskIdMatch) state.taskId = taskIdMatch[0];
-                                if (genIdMatch) state.genId = genIdMatch[0];
-                            }
-                            
-                            throw new Error('API返回的结果中没有图片，正在重试...');
-                        }
-                    } catch (apiError) {
-                        console.error(`API调用错误:`, apiError);
-                        
-                        // 获取用于记录的错误消息
-                        const errorMessage = apiError.message || '未知错误';
-                        
-                        // 处理超时错误 - 检查是否有延迟响应
-                        if (errorMessage.includes('超时')) {
-                            // 在显示错误消息之前等待1秒，看是否有延迟响应
-                            await new Promise(resolve => setTimeout(resolve, 1000));
-                            
-                            // 检查是否在此期间收到了延迟的API响应
-                            const delayedResponse = await window.API.checkDelayedResponse();
-                            if (delayedResponse && delayedResponse.type === 'text_and_image' && delayedResponse.imageUrl) {
-                                console.log("超时后收到延迟响应:", delayedResponse);
-                                
-                                // 使用延迟响应
-                                state.processedImage = delayedResponse.imageUrl;
-                                state.processDescription = delayedResponse.content || '处理完成(延迟响应)';
-                                
-                                if (delayedResponse.originalWidth && delayedResponse.originalHeight) {
-                                    state.originalWidth = delayedResponse.originalWidth;
-                                    state.originalHeight = delayedResponse.originalHeight;
-                                }
-                                
-                                if (delayedResponse.taskId) state.taskId = delayedResponse.taskId;
-                                if (delayedResponse.genId) state.genId = delayedResponse.genId;
-                                
-                                processingSuccess = true;
-                                updateProgressBar(100, '处理完成（延迟响应）');
-                            } else {
-                                showToast(`处理超时（${timeoutSeconds}秒），请稍后重试`, 'error');
-                            }
-                        } else {
-                            showToast(`API处理失败：${apiError.message}`, 'error');
-                        }
-                        
-                        // 如果已经到达最大重试次数，则退出循环
-                        if (currentRetry === maxRetries - 1) {
-                            break;
-                        }
-                        
-                        // 增加重试计数
-                        currentRetry++;
+                        !(state.processedImage.startsWith('http') || state.processedImage.startsWith('data:'))) {
+                        console.error("API返回的图片URL无效:", state.processedImage);
+                        showToast('API返回的图片URL无效', 'error');
+                    } else {
+                        processingSuccess = true;
                     }
-                } catch (error) {
-                    console.error('处理错误:', error);
-                    hideLoadingIndicator();
-                    showToast(error.message || '处理图片失败，请重试', 'error');
+                } else if (apiResponse.type === 'text') {
+                    // 纯文本响应
+                    state.processDescription = apiResponse.content || '处理完成，但没有图片结果。';
+                    state.processedImage = null;
+                    
+                    if (apiResponse.status === 'success') {
+                            processingSuccess = true;
+                    }
+                        } else if (apiResponse.type === 'progress') {
+                    // 进度信息 - 已经有任务ID，但还没有最终结果
+                    if (apiResponse.taskId) {
+                        state.taskId = apiResponse.taskId;
+                    }
+                    if (apiResponse.genId) {
+                        state.genId = apiResponse.genId;
+                    }
+                    
+                    // 显示进度信息
+                    state.processDescription = `处理进行中：${apiResponse.content || '请等待结果'}`;
+                    
+                    // 等待一段时间后打开结果，可能会在结果页通过延迟响应获取完整结果
+                                processingSuccess = true;
+                            } else {
+                    console.error("未知的API响应类型:", apiResponse.type);
+                    throw new Error(`未知的API响应类型: ${apiResponse.type}`);
                 }
-            }
+                
+                // 更新进度条为100%
+                updateProgressBar(100, '处理完成！');
             
             // 清除进度更新定时器
             clearInterval(progressInterval);
             
-            // 处理结果：如果成功，显示结果；如果失败，使用备选图像
-            if (processingSuccess) {
                 // 隐藏加载指示器
                 hideLoadingIndicator();
                 
-                // 将API响应存储到状态中
-                state.apiResponse = {
-                    type: 'text_and_image',
+                // 显示成功消息
+                showToast(processingSuccess ? '处理完成！' : '处理请求返回了错误', processingSuccess ? 'success' : 'error');
+                
+                // 显示处理结果
+                showResultView({
+                    originalImage: imageData ? URL.createObjectURL(imageData) : null,
                     content: state.processDescription,
                     imageUrl: state.processedImage,
-                    status: 'success',
+                    status: processingSuccess ? 'success' : 'error',
                     originalWidth: state.originalWidth,
-                    originalHeight: state.originalHeight
-                };
+                    originalHeight: state.originalHeight,
+                    taskId: state.taskId,
+                    genId: state.genId
+                });
+
+            } catch (error) {
+                console.error("API处理错误:", error);
                 
-                // 显示结果，使用前面存储的状态数据
-                showResultView(state.apiResponse);
-            } else {
-                console.error('API调用失败，使用备选方案');
+                // 清除进度更新定时器
+                clearInterval(progressInterval);
                 
-                await handleApiFailure(state.selectedOperation, state.uploadedImage ? URL.createObjectURL(state.uploadedImage) : '');
-            }
-        } catch (error) {
-            console.error('处理错误:', error);
+                // 显示错误信息
+                let errorMessage = error.message || '处理请求时出错';
+                
+                // 尝试从最后一次响应中提取更多信息
+                if (lastApiResponse && lastApiResponse.content) {
+                    errorMessage += `\n\n${lastApiResponse.content}`;
+                }
+                
+                // 更新状态
+                state.processDescription = errorMessage;
+                state.processingStatus = 'error';
+                
+                // 如果API请求失败，使用错误处理函数
+                await handleApiFailure(
+                    operation, 
+                    imageData ? URL.createObjectURL(imageData) : null
+                );
+                
+                // 隐藏加载指示器
             hideLoadingIndicator();
             showToast(error.message || '处理图片失败，请重试', 'error');
+            }
+        } catch (error) {
+            console.error("准备处理请求时出错:", error);
+            showToast(error.message || '处理准备失败', 'error');
+            hideLoadingIndicator();
         }
     });
 }
@@ -1870,8 +1330,8 @@ function showResultView(response = null) {
         // 如果提供了响应对象，使用它来更新状态
         if (response) {
             // 处理响应和原始图片
-            const hasOriginalImage = response.originalImage || (state.uploadedImage && state.selectedOperation !== 'generate');
-            const originalImageSrc = response.originalImage || (state.uploadedImage ? URL.createObjectURL(state.uploadedImage) : '');
+            const hasOriginalImage = response.originalImage || (state.uploadedImages.length > 0 && state.selectedOperation !== 'generate');
+            const originalImageSrc = response.originalImage || (state.uploadedImages.length > 0 ? URL.createObjectURL(state.uploadedImages[0]) : '');
             
             // 处理结果图片
             let processedImageSrc;
@@ -1916,7 +1376,7 @@ function showResultView(response = null) {
         }
 
         // 判断是否有原始图片（生成模式下没有原始图片）
-        const hasOriginalImage = state.uploadedImage && state.selectedOperation !== 'generate';
+        const hasOriginalImage = state.uploadedImages.length > 0 && state.selectedOperation !== 'generate';
         
         // 检查是否有处理后的图片
         const hasProcessedImage = state.processedImage !== null;
@@ -1980,10 +1440,19 @@ function showResultView(response = null) {
             downloadResultBtn.style.cursor = '';
         }
         
-        // 设置原始图片容器和处理后图片容器的高度为相同值，防止不一致
-        // 设置原始图片
-        if (hasOriginalImage && originalImage) {
-            originalImage.src = URL.createObjectURL(state.uploadedImage);
+        // 为生成模式特别处理 - 隐藏原始图片区域
+        if (state.selectedOperation === 'generate') {
+            if (resultOriginal && resultProcessed) {
+                // 隐藏原始图片区域
+                resultOriginal.style.display = 'none';
+                // 让处理后的图片占据全宽
+                resultProcessed.classList.add('full-width');
+                console.log("生成模式: 隐藏原始图片区域，设置处理后图片为全宽");
+            }
+        } 
+        // 对于其他操作模式，显示原始图片
+        else if (hasOriginalImage && originalImage) {
+            originalImage.src = URL.createObjectURL(state.uploadedImages[0]);
             
             if (resultOriginal && resultProcessed) {
                 resultOriginal.style.display = 'flex';
@@ -2009,33 +1478,43 @@ function showResultView(response = null) {
                     }
                 };
             }
-        } else if (resultOriginal && resultProcessed) {
+        } else {
+            // 如果没有原始图片，隐藏原始图片区域
+            if (resultOriginal && resultProcessed) {
             resultOriginal.style.display = 'none';
             resultProcessed.classList.add('full-width');
+            }
         }
         
         // 设置处理后的图片
         if (state.processedImage && processedImage) {
-            // 确保处理后的图片URL有效，必须是http开头的URL
-            if (state.processedImage.startsWith('http')) {
-                processedImage.src = state.processedImage;
-                console.log("设置处理后图片URL:", state.processedImage);
+            // 确保处理后的图片URL有效，必须是http开头的URL或数据URL
+            if (state.processedImage.startsWith('http') || state.processedImage.startsWith('data:')) {
+            processedImage.src = state.processedImage;
+            console.log("设置处理后图片URL:", state.processedImage);
+            
+            // 保持原始图片的宽高比
+            if (state.originalWidth && state.originalHeight) {
+                // 根据原始尺寸设置样式
+                processedImage.style.aspectRatio = `${state.originalWidth} / ${state.originalHeight}`;
+                console.log(`设置图片宽高比: ${state.originalWidth} / ${state.originalHeight}`);
+                } else if (state.selectedOperation === 'generate') {
+                    // 生成模式下默认使用16:9的比例
+                    processedImage.style.aspectRatio = "16/9";
+                    console.log("生成模式: 设置默认宽高比 16/9");
+            }
+            
+            // 添加图片加载事件，确保图片正确加载
+            processedImage.onload = function() {
+                console.log("处理后图片加载成功，尺寸:", this.naturalWidth, "x", this.naturalHeight);
                 
-                // 保持原始图片的宽高比
-                if (state.originalWidth && state.originalHeight) {
-                    // 根据原始尺寸设置样式
-                    processedImage.style.aspectRatio = `${state.originalWidth} / ${state.originalHeight}`;
-                    console.log(`设置图片宽高比: ${state.originalWidth} / ${state.originalHeight}`);
-                }
-                
-                // 添加图片加载事件，确保图片正确加载
-                processedImage.onload = function() {
-                    console.log("处理后图片加载成功，尺寸:", this.naturalWidth, "x", this.naturalHeight);
-                    
-                    // 如果没有原始尺寸信息，使用当前图片的尺寸
-                    if (!state.originalWidth || !state.originalHeight) {
-                        state.originalWidth = this.naturalWidth;
-                        state.originalHeight = this.naturalHeight;
+                // 如果没有原始尺寸信息，使用当前图片的尺寸
+                if (!state.originalWidth || !state.originalHeight) {
+                    state.originalWidth = this.naturalWidth;
+                    state.originalHeight = this.naturalHeight;
+                        
+                        // 更新宽高比
+                        processedImage.style.aspectRatio = `${this.naturalWidth} / ${this.naturalHeight}`;
                     }
                     
                     // 更新下载按钮，关联当前图片
@@ -2048,15 +1527,15 @@ function showResultView(response = null) {
                 };
                 
                 // 处理加载失败的情况
-                processedImage.onerror = function() {
-                    console.error("处理后图片加载失败:", state.processedImage);
+            processedImage.onerror = function() {
+                console.error("处理后图片加载失败:", state.processedImage);
                     
                     // 显示错误信息，并设置备选图像
                     processedImage.src = 'assets/examples/error.jpg';
                     processedImage.alt = '图片加载失败';
                     
                     // 更新描述
-                    if (resultDescription) {
+                if (resultDescription) {
                         let errorHtml = `<div class="error-message">
                             <strong>图片加载失败</strong>
                             <p>无法加载处理后的图片，请检查URL是否有效：${state.processedImage}</p>
@@ -2170,7 +1649,7 @@ function showResultView(response = null) {
 function resetState() {
     // 重置所有状态变量
     state.currentStep = 1;
-    state.uploadedImage = null;
+    state.uploadedImages = [];
             state.selectedOperation = null;
     state.textDescription = '';
             state.selectedStyle = null;
@@ -2470,28 +1949,28 @@ async function handleApiFailure(operation, originalImageSrc) {
     try {
         console.log("检查是否有延迟响应...");
         
-        const delayedResponse = await window.API.checkDelayedResponse();
+    const delayedResponse = await window.API.checkDelayedResponse();
         
         if (delayedResponse && delayedResponse.imageUrl) {
-            console.log("在handleApiFailure中发现延迟响应:", delayedResponse);
-            
+        console.log("在handleApiFailure中发现延迟响应:", delayedResponse);
+        
             // 使用延迟响应，而不是显示错误
-            showResultView({
-                type: 'text_and_image',
-                content: delayedResponse.content || '处理完成（延迟响应）',
-                imageUrl: delayedResponse.imageUrl,
-                status: 'success',
-                originalImage: originalImageSrc,
-                originalWidth: delayedResponse.originalWidth,
-                originalHeight: delayedResponse.originalHeight
-            });
-            
-            // 隐藏加载指示器
-            hideLoadingIndicator();
-            
-            // 显示提示
-            showToast('处理成功（延迟响应）', 'success');
-            
+        showResultView({
+            type: 'text_and_image',
+            content: delayedResponse.content || '处理完成（延迟响应）',
+            imageUrl: delayedResponse.imageUrl,
+            status: 'success',
+            originalImage: originalImageSrc,
+            originalWidth: delayedResponse.originalWidth,
+            originalHeight: delayedResponse.originalHeight
+        });
+        
+        // 隐藏加载指示器
+        hideLoadingIndicator();
+        
+        // 显示提示
+        showToast('处理成功（延迟响应）', 'success');
+        
             return; // 直接返回，不显示错误信息
         } else {
             console.log("没有找到延迟响应或响应不包含图片，显示错误信息");
@@ -2661,13 +2140,13 @@ async function downloadRemoteImage(url) {
                             }
                         } catch (altError) {
                             console.warn("使用替代URL获取图片失败:", altError);
-                            
-                            // 提示用户手动下载
+                
+                // 提示用户手动下载
                             const message = '由于跨域限制，无法自动下载图片。请右键点击图片，选择"图片另存为..."进行下载，或点击下方显示的直接链接。';
                             showToast(message, 'warning', 8000);
-                            
-                            // 打开图片在新标签页
-                            window.open(url, '_blank');
+                
+                // 打开图片在新标签页
+                window.open(url, '_blank');
                             
                             // 在结果描述中添加直接链接
                             const resultDescription = document.getElementById('result-description');
@@ -2685,7 +2164,7 @@ async function downloadRemoteImage(url) {
                                 }
                             }
                             
-                            return;
+                return;
                         }
                     }
                 }
@@ -2700,12 +2179,12 @@ async function downloadRemoteImage(url) {
         } else {
             // 其他普通URL的处理
             try {
-                // 使用fetch获取图片数据
-                const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error(`获取图片失败: ${response.status}`);
-                }
-                blob = await response.blob();
+            // 使用fetch获取图片数据
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`获取图片失败: ${response.status}`);
+            }
+            blob = await response.blob();
             } catch (error) {
                 console.error("获取图片失败:", error);
                 showToast('下载图片失败，请右键图片另存为', 'error');
@@ -2766,3 +2245,146 @@ async function downloadRemoteImage(url) {
         }
     }
 } 
+
+/**
+ * 初始化图片上传功能
+ * 注意：此功能现已由ui.js中的同名函数实现，本函数仅作为兼容性保留
+ */
+function initImageUpload() {
+    console.log("process.js中的initImageUpload函数已被ui.js替代，为避免冲突不执行实际操作");
+    // 保留空实现以避免可能的引用错误
+    return;
+}
+
+/**
+ * 更新步骤3的UI，根据操作类型显示不同内容
+ */
+function updateStep3UI() {
+    console.log(`更新步骤3 UI - 当前操作类型: ${state.selectedOperation}`);
+    
+    // 获取步骤3的标题和描述元素
+    const stepTitle = document.querySelector('#step-3 .step-title');
+    const stepDesc = document.querySelector('#step-3 .step-description');
+    const styleOptions = document.querySelector('.style-options');
+    const advancedStyleOptions = document.querySelector('.advanced-style-options');
+    const styleCustomizationArea = document.getElementById('style-customization-area');
+    
+    // 进行非空检查，避免空引用错误
+    if (!styleOptions || !advancedStyleOptions) {
+        console.error('未找到风格选项元素');
+        return;
+    }
+    
+    // 移动文字描述区域到步骤3（如果需要）
+    const textDescriptionArea = document.getElementById('text-description-area');
+    if (textDescriptionArea) {
+        // 当操作类型为创意生成或一句话生成模式时，将文字描述区域移动到步骤3
+        if (state.selectedOperation === 'creative' || state.selectedOperation === 'generate') {
+            // 保存原始文字描述
+            const originalDescription = document.getElementById('image-description').value;
+            
+            // 将文字描述区域移动到步骤3的合适位置
+            const step3Content = document.getElementById('step-3');
+            if (step3Content) {
+                // 首先检查文字描述区域是否已经在步骤3中
+                const existingDescArea = step3Content.querySelector('#text-description-area');
+                if (!existingDescArea) {
+                    // 对于创意生成，将文字描述区域放在高级风格选项后面
+                    if (state.selectedOperation === 'creative') {
+                        if (advancedStyleOptions && advancedStyleOptions.nextSibling) {
+                            step3Content.insertBefore(textDescriptionArea, advancedStyleOptions.nextSibling);
+                        } else {
+                            // 如果高级风格选项是最后一个元素，就添加到末尾
+                            step3Content.appendChild(textDescriptionArea);
+                        }
+                    } else {
+                        // 对于一句话生成，放在开头
+                        step3Content.insertBefore(textDescriptionArea, step3Content.firstChild.nextSibling.nextSibling);
+                    }
+                    
+                    textDescriptionArea.style.display = 'block';
+                    
+                    // 更新文字描述区域的标题和提示文本
+                    if (state.selectedOperation === 'creative') {
+                        const descTitle = textDescriptionArea.querySelector('.description-title');
+                        if (descTitle) {
+                            descTitle.textContent = '补充创意描述和自定义指令';
+                        }
+                        
+                        const descHint = textDescriptionArea.querySelector('.description-hint');
+                        if (descHint) {
+                            descHint.textContent = '选择创意风格后将自动添加创意指令，您可根据需要修改';
+                        }
+                    }
+                    
+                    // 恢复已输入的文字描述
+                    document.getElementById('image-description').value = originalDescription;
+                } else {
+                    // 如果已经存在，只需显示它
+                    existingDescArea.style.display = 'block';
+                }
+            }
+        }
+    }
+    
+    // 根据操作类型显示不同内容
+    if (state.selectedOperation === 'style') {
+        // 显示常规风格选项，隐藏高级创意风格
+        styleOptions.style.display = 'grid';
+        advancedStyleOptions.style.display = 'none';
+        if (stepTitle) stepTitle.textContent = '选择风格';
+        if (stepDesc) stepDesc.textContent = '选择您想要转换成的艺术风格';
+        
+        // 显示自定义风格指令区域
+        if (styleCustomizationArea) {
+            styleCustomizationArea.style.display = 'block';
+        }
+        
+        // 隐藏文字描述区域（如果存在）
+        if (textDescriptionArea) {
+            textDescriptionArea.style.display = 'none';
+        }
+    } else if (state.selectedOperation === 'creative') {
+        // 隐藏常规风格选项，显示高级创意风格
+        styleOptions.style.display = 'none';
+        advancedStyleOptions.style.display = 'block';
+        
+        // 隐藏自定义风格指令区域
+        if (styleCustomizationArea) {
+            styleCustomizationArea.style.display = 'none';
+        }
+        
+        if (stepTitle) stepTitle.textContent = '选择创意模式';
+        if (stepDesc) stepDesc.textContent = '选择一种高阶创意风格，系统将自动生成对应提示词';
+        
+        // 修改高级风格选项标题和描述
+        const advancedOptionsTitle = advancedStyleOptions.querySelector('.advanced-options-title');
+        const advancedOptionsDesc = advancedStyleOptions.querySelector('.advanced-options-desc');
+        
+        if (advancedOptionsTitle) {
+            advancedOptionsTitle.textContent = '创意风格选择';
+        }
+        
+        if (advancedOptionsDesc) {
+            advancedOptionsDesc.textContent = '选择以下创意风格之一，系统将根据您的上传图片生成创意效果';
+        }
+    } else {
+        // 默认显示所有风格选项
+        styleOptions.style.display = 'grid';
+        advancedStyleOptions.style.display = 'block';
+        if (stepTitle) stepTitle.textContent = '选择效果';
+        if (stepDesc) stepDesc.textContent = '选择您想要的生成效果并添加详细描述';
+    }
+    
+    // 检查是否预设了风格
+    if (state.presetStyle && !state.selectedStyle) {
+        const styleSelector = state.selectedOperation === 'style' 
+            ? `.style-option[data-style="${state.presetStyle}"]`
+            : `.creative-style-option[data-style="${state.presetStyle}"]`;
+        
+        const styleOption = document.querySelector(styleSelector);
+        if (styleOption) {
+            styleOption.click();
+        }
+    }
+}

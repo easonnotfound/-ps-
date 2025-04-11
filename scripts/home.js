@@ -17,100 +17,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
 /**
  * 初始化主题切换功能
- * 添加炫酷的白天/黑夜切换动画效果
+ * 注意：此功能现已由ui.js中的同名函数实现，此处仅作为空函数保留，避免调用错误
  */
 function initThemeToggle() {
-    const themeToggleBtn = document.getElementById('theme-toggle-btn');
-    let isAnimating = false; // 防止动画期间重复点击
-    
-    // 检查本地存储中的主题设置
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme === 'dark') {
-        document.documentElement.classList.add('dark-theme');
-        document.body.classList.add('dark-theme');
-    } else {
-        document.documentElement.classList.remove('dark-theme');
-        document.body.classList.remove('dark-theme');
-    }
-
-    // 创建主题切换动画覆盖层
-    const themeOverlay = document.createElement('div');
-    themeOverlay.className = 'theme-toggle-animation';
-    document.body.appendChild(themeOverlay);
-    
-    // 添加主题切换按钮点击事件
-    themeToggleBtn.addEventListener('click', function(e) {
-        e.preventDefault(); // 防止默认行为
-        
-        // 立即切换主题，确保响应迅速
-        const isDarkMode = document.body.classList.contains('dark-theme');
-        const newTheme = isDarkMode ? 'light' : 'dark';
-        
-        // 立即应用新主题，让用户马上看到变化
-        if (isDarkMode) {
-            document.documentElement.classList.remove('dark-theme');
-            document.body.classList.remove('dark-theme');
-        } else {
-            document.documentElement.classList.add('dark-theme');
-            document.body.classList.add('dark-theme');
-        }
-        
-        // 立即保存到localStorage
-        localStorage.setItem('theme', newTheme);
-        
-        // 仅在非动画状态下创建新的动画效果
-        if (!isAnimating) {
-            isAnimating = true;
-            
-            // 添加炫酷漩涡特效
-            createVortexEffect(isDarkMode);
-            
-            // 添加适当的过渡动画类
-            themeOverlay.className = 'theme-toggle-animation';
-            themeOverlay.classList.add(isDarkMode ? 'to-light' : 'to-dark');
-            
-            // 添加涟漪效果
-            createRippleEffect(themeToggleBtn, isDarkMode);
-            
-            // 创建动画元素
-            createThemeTransitionElements(isDarkMode);
-            
-            // 创建闪光特效
-            createSparkleEffect(themeToggleBtn, 15, isDarkMode);
-            
-            // 动画完成后清理
-            setTimeout(() => {
-                isAnimating = false;
-                // 删除所有动画元素
-                document.querySelectorAll('.theme-animation-element').forEach(el => el.remove());
-            }, 800); // 缩短动画时间，让切换更丝滑
-        }
-    });
+    // 不执行任何操作，使用ui.js中的通用实现
+    console.log('首页使用ui.js中的主题切换功能');
 }
 
 /**
  * 创建主题切换过渡动画元素
+ * 注意：此功能已移除，由ui.js中的主题切换功能统一处理
  * @param {boolean} isDarkMode - 当前是否为深色模式
  */
 function createThemeTransitionElements(isDarkMode) {
-    // 清除旧的动画元素
-    document.querySelectorAll('.theme-animation-element').forEach(el => el.remove());
-    
-    const themeToggleBtn = document.getElementById('theme-toggle-btn');
-    const btnRect = themeToggleBtn.getBoundingClientRect();
-    const centerX = btnRect.left + btnRect.width / 2;
-    const centerY = btnRect.top + btnRect.height / 2;
-    
-    if (isDarkMode) {
-        // 从黑夜到白天的动画：太阳光芒、云朵
-        createSunRays(centerX, centerY);
-        createClouds(centerX, centerY);
-    } else {
-        // 从白天到黑夜的动画：星星、月亮
-        createStars(centerX, centerY);
-        createMoonCraters(centerX, centerY);
-        createTwinkleStars(centerX, centerY);
-    }
+    // 不执行任何操作
 }
 
 /**
@@ -211,85 +131,32 @@ function createMoonCraters(x, y) {
 
 /**
  * 创建漩涡特效
+ * 注意：此功能已移除，由ui.js中的主题切换功能统一处理
  * @param {boolean} isDarkMode - 当前是否为深色模式
  */
 function createVortexEffect(isDarkMode) {
-    const vortex = document.createElement('div');
-    vortex.className = 'theme-vortex theme-animation-element';
-    if (!isDarkMode) {
-        vortex.classList.add('dark-vortex');
-    }
-    document.body.appendChild(vortex);
-    
-    // 添加后自动移除
-    setTimeout(() => {
-        vortex.remove();
-    }, 700);
+    // 不执行任何操作
 }
 
 /**
  * 创建涟漪效果
- * @param {HTMLElement} btn - 触发按钮
+ * 注意：此功能已移除，由ui.js中的主题切换功能统一处理
+ * @param {HTMLElement} element - 触发涟漪的元素
  * @param {boolean} isDarkMode - 当前是否为深色模式
  */
-function createRippleEffect(btn, isDarkMode) {
-    const rect = btn.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    
-    for (let i = 0; i < 3; i++) {
-        const ripple = document.createElement('div');
-        ripple.className = 'ripple theme-animation-element';
-        ripple.style.left = `${centerX}px`;
-        ripple.style.top = `${centerY}px`;
-        ripple.style.borderColor = isDarkMode ? '#ffb74d' : '#86a8e7';
-        ripple.style.animationDelay = `${i * 0.15}s`;
-        document.body.appendChild(ripple);
-    }
+function createRippleEffect(element, isDarkMode) {
+    // 不执行任何操作
 }
 
 /**
  * 创建闪光特效
- * @param {HTMLElement} btn - 触发按钮
+ * 注意：此功能已移除，由ui.js中的主题切换功能统一处理
+ * @param {HTMLElement} element - 触发闪光的元素
  * @param {number} count - 闪光数量
  * @param {boolean} isDarkMode - 当前是否为深色模式
  */
-function createSparkleEffect(btn, count, isDarkMode) {
-    const rect = btn.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    
-    for (let i = 0; i < count; i++) {
-        setTimeout(() => {
-            const sparkle = document.createElement('div');
-            sparkle.className = 'sparkle theme-animation-element';
-            
-            // 随机位置
-            const angle = Math.random() * Math.PI * 2;
-            const distance = 30 + Math.random() * 100;
-            const x = centerX + Math.cos(angle) * distance;
-            const y = centerY + Math.sin(angle) * distance;
-            
-            sparkle.style.left = `${x}px`;
-            sparkle.style.top = `${y}px`;
-            
-            // 设置颜色
-            if (isDarkMode) {
-                sparkle.style.backgroundColor = '#ffb74d';
-                sparkle.style.boxShadow = '0 0 10px rgba(255, 183, 77, 0.8)';
-            } else {
-                sparkle.style.backgroundColor = '#86a8e7';
-                sparkle.style.boxShadow = '0 0 10px rgba(134, 168, 231, 0.8)';
-            }
-            
-            document.body.appendChild(sparkle);
-            
-            // 自动移除
-            setTimeout(() => {
-                sparkle.remove();
-            }, 600);
-        }, i * 20);
-    }
+function createSparkleEffect(element, count, isDarkMode) {
+    // 不执行任何操作
 }
 
 /**

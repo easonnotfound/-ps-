@@ -256,14 +256,12 @@
                             </div>
                             <p class="upload-text">拖放图片至此处或点击上传</p>
                             <p class="upload-hint">支持JPG、PNG和GIF格式，最大10MB</p>
-                            <input type="file" id="file-input" accept="image/*" hidden>
+                            <input type="file" id="file-input" accept="image/*" multiple hidden>
                             <button class="upload-btn">选择图片</button>
                         </div>
-                        <div class="preview-container" id="image-preview" hidden>
-                            <img id="preview-image" src="" alt="预览图">
-                            <button class="remove-btn" id="remove-image" aria-label="移除图片">
-                                <span class="material-symbols-rounded">close</span>
-                            </button>
+                        <!-- 修改预览容器结构 -->
+                        <div class="preview-container" id="images-preview">
+                            <!-- 预览项将通过JavaScript动态添加 -->
                         </div>
                     </div>
 
@@ -500,5 +498,6 @@
     <script src="scripts/ui.js"></script>
     <script src="scripts/api.js"></script>
     <script src="scripts/process.js"></script>
+    <script src="scripts/init.js"></script>
 </body>
 </html> 
