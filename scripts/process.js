@@ -11,9 +11,21 @@ const state = {
     instruction: '',
     selectedStyle: null,
     processingSuccess: false,
-    retryCount: 0
+    retryCount: 0,
+    textDescription: '',
+    customInstruction: '',
+    processedImage: null,
+    processDescription: '',
+    processingStatus: 'idle',
+    taskId: null,
+    genId: null,
+    originalWidth: null,
+    originalHeight: null,
+    lastApiResponse: null, // 添加最后一次API响应存储
+    processingError: null // 添加处理错误存储
 };
 
+// 确保在全局window对象上也有该状态
 window.state = state;
 
 /**
@@ -39,63 +51,182 @@ window.checkAndEnableNextButton = checkAndEnableNextButton;
  * 处理图片和指令
  */
 async function processImageWithInstruction() {
-    const processingStatus = document.getElementById('processing-status');
-    const submitBtn = document.getElementById('submit-btn');
-    
     try {
-        submitBtn.disabled = true;
-        processingStatus.textContent = '正在处理...';
+        console.log("开始处理图片和指令");
         
-        // 获取选中的图片
-        const selectedImages = Array.from(document.querySelectorAll('.preview-item.selected'))
-            .map(item => state.uploadedImages.find(img => img.name === item.dataset.filename))
-            .filter(Boolean);
-        
-        if (state.selectedOperation !== 'generate' && selectedImages.length === 0) {
-            throw new Error('请选择要处理的图片');
+        // 获取当前操作类型
+        const operation = window.state.selectedOperation;
+        if (!operation) {
+            throw new Error("未选择操作类型");
         }
 
+        console.log("处理指令:", window.state);
+        
+        // 获取图片文件（如果有的话）
+        let imageFile = null;
+        if (operation !== 'generate') {
+            // 如果不是生成操作，需要获取图片
+            if (window.state.uploadedImages && window.state.uploadedImages.length > 0) {
+                imageFile = window.state.uploadedImages[0]; // 使用第一张上传的图片
+                console.log("将发送图片到API:", imageFile.name);
+            } else {
+                throw new Error("未上传图片，无法进行操作");
+            }
+        }
+        
+        // 获取指令文本
+        let instruction = '';
+        
+        if (operation === 'generate') {
+            // 生成操作使用文字描述
+            instruction = window.state.imageDescription;
+            if (!instruction) {
+                throw new Error("未输入图片描述，无法生成图片");
+            }
+        } else if (operation === 'style') {
+            // 风格转换操作
+            const selectedStyle = window.state.selectedStyle;
+            const customInstruction = window.state.styleInstruction;
+            
+            if (customInstruction) {
+                // 如果有自定义指令，优先使用
+                instruction = customInstruction;
+            } else if (selectedStyle) {
+                // 否则使用预设风格指令
+                instruction = getStyleInstruction(selectedStyle);
+            } else {
+                throw new Error("未选择风格或输入自定义指令");
+            }
+        } else if (operation === 'creative') {
+            // 创意操作
+            const selectedCreative = window.state.selectedCreativeStyle;
+            const customInstruction = window.state.creativeInstruction;
+            
+            if (customInstruction) {
+                // 如果有自定义指令，优先使用
+                instruction = customInstruction;
+            } else if (selectedCreative) {
+                // 否则使用预设创意指令
+                instruction = getCreativeInstruction(selectedCreative);
+            } else {
+                throw new Error("未选择创意风格或输入自定义指令");
+            }
+        }
+        
+        if (!instruction) {
+            throw new Error("无法构建处理指令");
+        }
+        
         // 显示加载指示器
-        showLoadingIndicator('正在处理图片...');
+        showLoadingIndicator();
         
         // 创建进度条
         createProgressBar();
-
-        // 根据操作类型构建请求数据
-        const requestData = {
-            operation: state.selectedOperation,
-            instruction: state.instruction || '',
-            style: state.selectedStyle,
-            images: selectedImages
-        };
-
-        // 调用API处理图片
-        const response = await window.API.processImageWithInstruction(requestData);
         
-        if (response.success) {
-            state.processingSuccess = true;
-            processingStatus.textContent = '处理完成！';
+        // 更新进度条初始状态
+        updateProgressBar(10, '正在准备请求...');
+        
+        // 设置进度更新定时器 - 模拟进度
+        let progress = 10;
+        const progressInterval = setInterval(() => {
+            if (progress < 90) {
+                progress += Math.floor(Math.random() * 3) + 1;
+                updateProgressBar(progress, '正在处理中...');
+            }
+        }, 1000);
+        
+        try {
+            // 发送API请求
+            console.log("发送API请求，图片文件:", imageFile ? imageFile.name : "无", "指令:", instruction);
             
-            // 更新进度条为完成状态
-            updateProgressBar(100, '处理完成');
+            // 调用API处理图片和指令
+            const response = await window.API.processImageWithInstruction(imageFile, instruction);
             
-            // 显示结果
-            showResultView(response);
-        } else {
-            throw new Error(response.error || '处理失败，请重试');
+            // 清除进度更新定时器
+            clearInterval(progressInterval);
+            
+            // 处理API响应
+            console.log("API响应:", response);
+            
+            // 判断处理是否成功
+            const processingSuccess = response && response.status === 'success';
+            
+            // 更新状态
+            window.state.processingSuccess = processingSuccess;
+            
+            // 如果处理成功并且返回了图片URL
+            if (processingSuccess && response.imageUrl) {
+                // 保存处理后的图片URL
+                window.state.processedImage = response.imageUrl;
+                
+                // 保存任务ID和生成ID
+                window.state.taskId = response.taskId || null;
+                window.state.genId = response.genId || null;
+                
+                // 保存描述文本
+                window.state.processDescription = response.content || '处理完成';
+                
+                // 保存原始尺寸
+                window.state.originalWidth = response.originalWidth || null;
+                window.state.originalHeight = response.originalHeight || null;
+                
+                // 更新进度条为完成状态
+                updateProgressBar(100, '处理完成!');
+            } else {
+                // 处理失败情况
+                window.state.processDescription = response.content || '处理失败';
+                
+                // 更新进度条为失败状态
+                updateProgressBar(100, '处理失败!', true);
+            }
+            
+            // 显示处理结果
+            showResultView({
+                type: 'text_and_image',
+                content: window.state.processDescription,
+                imageUrl: window.state.processedImage,
+                status: processingSuccess ? 'success' : 'error',
+                originalWidth: window.state.originalWidth,
+                originalHeight: window.state.originalHeight,
+                taskId: window.state.taskId,
+                genId: window.state.genId
+            });
+
+        } catch (error) {
+            console.error("API处理错误:", error);
+            
+            // 清除进度更新定时器
+            clearInterval(progressInterval);
+            
+            // 更新进度条为错误状态
+            updateProgressBar(100, '处理失败!', true);
+            
+            // 显示错误信息
+            let errorMessage = error.message || '处理请求时出错';
+            
+            // 更新状态
+            window.state.processingSuccess = false;
+            window.state.processDescription = errorMessage;
+            
+            // 显示错误结果
+            showResultView({
+                type: 'text',
+                content: errorMessage,
+                status: 'error'
+            });
+            
+            // 尝试处理API失败
+            handleApiFailure(operation, window.state.uploadedImageUrl);
+        } finally {
+            // 隐藏加载指示器
+            hideLoadingIndicator();
         }
     } catch (error) {
-        console.error('处理失败:', error);
-        processingStatus.textContent = `处理失败: ${error.message}`;
+        console.error("准备处理请求时出错:", error);
         
-        // 更新进度条为错误状态
-        updateProgressBar(0, '处理失败');
+        // 显示错误消息
+        showToast(error.message, 'error');
         
-        // 显示错误信息
-        handleApiFailure(state.selectedOperation, error.message);
-        
-        submitBtn.disabled = false;
-    } finally {
         // 隐藏加载指示器
         hideLoadingIndicator();
     }
@@ -105,80 +236,327 @@ async function processImageWithInstruction() {
  * 显示处理结果
  */
 function showResultView(response) {
-    const resultView = document.getElementById('result-view');
-    const originalImagesContainer = document.getElementById('original-images');
-    const processedImagesContainer = document.getElementById('processed-images');
-    
-    // 清空容器
-    originalImagesContainer.innerHTML = '';
-    processedImagesContainer.innerHTML = '';
-    
-    if (state.selectedOperation === 'generate') {
-        // 生成模式下只显示生成的图片
-        originalImagesContainer.style.display = 'none';
-        processedImagesContainer.style.display = 'grid';
+    try {
+        console.log("API处理结果:", response);
         
-        // 添加生成的图片
-        if (Array.isArray(response.results)) {
-            response.results.forEach(result => {
-                const imgContainer = document.createElement('div');
-                imgContainer.className = 'result-image-container';
-                
-                const img = document.createElement('img');
-                img.src = result.url;
-                img.alt = '生成的图片';
-                
-                const downloadBtn = document.createElement('button');
-                downloadBtn.className = 'download-btn';
-                downloadBtn.innerHTML = '<span class="material-symbols-rounded">download</span>';
-                downloadBtn.onclick = () => downloadImage(result.url);
-                
-                imgContainer.appendChild(img);
-                imgContainer.appendChild(downloadBtn);
-                processedImagesContainer.appendChild(imgContainer);
-            });
+        // 保存响应用于可能的重试
+        window.state.lastApiResponse = response;
+        
+        const resultContainer = document.getElementById('result-container');
+        const originalImage = document.getElementById('original-image');
+        const processedImage = document.getElementById('processed-image');
+        const resultDescription = document.getElementById('result-description');
+        const downloadBtn = document.getElementById('download-result-btn');
+        const retryBtn = document.getElementById('retry-btn');
+        
+        if (!resultContainer || !resultDescription) {
+            throw new Error("未找到结果容器元素");
         }
-    } else {
-        // 其他模式显示原图和处理后的图片
-        originalImagesContainer.style.display = 'grid';
-        processedImagesContainer.style.display = 'grid';
         
-        // 添加原图
-        const selectedImages = Array.from(document.querySelectorAll('.preview-item.selected'));
-        selectedImages.forEach(previewItem => {
-            const img = previewItem.querySelector('img');
-            const clone = img.cloneNode(true);
-            clone.className = 'original-image';
-            originalImagesContainer.appendChild(clone);
+        // 确保结果容器可见 - 移除hidden属性并添加show类
+        resultContainer.removeAttribute('hidden');
+        resultContainer.classList.add('show');
+        
+        console.log("结果容器已设置为可见:", resultContainer);
+        
+        // 初始启用重试按钮
+        if (retryBtn) {
+            retryBtn.disabled = false;
+            retryBtn.style.display = 'flex';
+        }
+        
+        // 根据操作类型决定显示内容
+        const operation = window.state.selectedOperation;
+        const isGenerateOperation = operation === 'generate';
+        
+        // 设置原始图片区域的显示状态
+        const originalImageContainer = document.querySelector('.result-original');
+        if (originalImageContainer) {
+            originalImageContainer.style.display = isGenerateOperation ? 'none' : 'block';
+        }
+        
+        // 设置处理后图片容器的样式
+        const processedImageContainer = document.querySelector('.result-processed');
+        if (processedImageContainer) {
+            processedImageContainer.className = `result-processed${isGenerateOperation ? ' full-width' : ''}`;
+        }
+        
+        // 检查是否有图片URL，没有则视为错误状态
+        if (response.type === 'text_and_image' && !response.imageUrl) {
+            console.warn("没有找到图片URL，将响应视为错误状态");
+            response.status = 'error';
+            response.type = 'text';
+            
+            // 检查是否有特殊错误类型
+            if (!response.errorType) {
+                if (response.content && (response.content.includes('生成失败') || response.content.includes('❌'))) {
+                    response.errorType = 'generation_failed';
+                }
+            }
+        }
+        
+        // 处理错误响应
+        if (response.status === 'error') {
+            let errorContent = response.content || '处理出错';
+            
+            // 根据错误类型提供不同的提示信息
+            if (response.errorType === 'generation_failed') {
+                errorContent = `
+                    <div class="error-message">
+                        <strong>图像生成失败</strong>
+                        <p>${response.content || '服务器无法生成图像，请稍后重试。'}</p>
+                        <p>可能的原因：</p>
+                        <ul>
+                            <li>服务器资源暂时不足</li>
+                            <li>图像内容可能不符合生成要求</li>
+                            <li>处理过程中出现技术问题</li>
+                        </ul>
+                        <p>您可以点击下方的"重新处理"按钮重试。</p>
+                    </div>
+                `;
+            } else {
+                errorContent = `
+                    <div class="error-message">
+                        <strong>处理出错</strong>
+                        <p>${errorContent}</p>
+                        <p>您可以点击下方的"重新处理"按钮重试。</p>
+                    </div>
+                `;
+            }
+            
+            // 显示错误信息
+            resultDescription.innerHTML = errorContent;
+            
+            // 禁用下载按钮
+            if (downloadBtn) {
+                downloadBtn.disabled = true;
+                downloadBtn.style.opacity = 0.5;
+            }
+            
+            // 确保重试按钮可用
+            if (retryBtn) {
+                retryBtn.style.display = 'flex';
+                retryBtn.disabled = false;
+            }
+            
+            // 清空图片显示
+            if (processedImage) {
+                processedImage.src = '';
+            }
+        } else {
+            // 成功响应处理
+            if (response.type === 'text_and_image') {
+                // 设置原始图片（如果有的话）
+                if (originalImage) {
+                    const originalImageSrc = window.state.uploadedImageUrl;
+                    if (originalImageSrc && !isGenerateOperation) {
+                        originalImage.src = originalImageSrc;
+                        console.log("设置原始图片:", originalImageSrc);
+                        
+                        // 确保原始图片容器可见
+                        const originalImageContainer = document.querySelector('.result-original');
+                        if (originalImageContainer) {
+                            originalImageContainer.style.display = 'block';
+                        }
+                    } else {
+                        // 生成操作没有原始图片，隐藏原始图片容器
+                        const originalImageContainer = document.querySelector('.result-original');
+                        if (originalImageContainer) {
+                            originalImageContainer.style.display = 'none';
+                        }
+                    }
+                }
+                
+                // 设置处理后的图片
+                if (processedImage && response.imageUrl) {
+                    processedImage.src = response.imageUrl;
+                    console.log("设置处理后图片:", response.imageUrl);
+                    
+                    // 保存图片URL到state以便下载
+                    window.state.processedImage = response.imageUrl;
+                    
+                    // 确保处理后图片容器可见
+                    const processedImageContainer = document.querySelector('.result-processed');
+                    if (processedImageContainer) {
+                        processedImageContainer.style.display = 'block';
+                    }
+                    
+                    // 启用下载按钮
+                    if (downloadBtn) {
+                        downloadBtn.disabled = false;
+                        downloadBtn.style.opacity = 1;
+                    }
+                } else {
+                    console.warn("未找到有效的图片URL");
+                    if (processedImage) {
+                        processedImage.src = '';
+                    }
+                    
+                    // 禁用下载按钮
+                    if (downloadBtn) {
+                        downloadBtn.disabled = true;
+                        downloadBtn.style.opacity = 0.5;
+                    }
+                }
+                
+                // 设置描述文本
+                let formattedContent = formatMarkdown(response.content || '处理完成');
+                resultDescription.innerHTML = `
+                    <span class="operation-tag ${operation}">${getOperationName(operation)}</span>
+                    ${formattedContent}
+                `;
+                
+                console.log("已设置结果描述");
+            } else {
+                // 纯文本响应
+                resultDescription.innerHTML = formatMarkdown(response.content || '处理完成');
+                
+                // 清空图片
+                if (processedImage) {
+                    processedImage.src = '';
+                }
+                
+                // 禁用下载按钮
+                if (downloadBtn) {
+                    downloadBtn.disabled = true;
+                    downloadBtn.style.opacity = 0.5;
+                }
+            }
+        }
+        
+        // 显示结果容器
+        resultContainer.hidden = false;
+    } catch (error) {
+        console.error("显示结果时出错:", error);
+        showToast(`显示结果时出错: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * 获取操作名称的辅助函数
+ */
+function getOperationName(operation) {
+    switch(operation) {
+        case 'generate': return '图像生成';
+        case 'style': return '风格转换';
+        case 'creative': return '创意生成';
+        default: return '图像处理';
+    }
+}
+
+/**
+ * 处理下载按钮点击事件
+ * @param {string} imageUrl - 要下载的图片URL
+ */
+async function handleDownload(imageUrl) {
+    try {
+        // 如果没有图片URL，禁用下载按钮
+        if (!imageUrl) {
+            console.error("下载失败：没有有效的图片URL");
+            showToast("无法下载：图片URL不可用", "error");
+            
+            // 禁用下载按钮
+            const downloadBtn = document.getElementById('download-result-btn');
+            if (downloadBtn) {
+                downloadBtn.disabled = true;
+                downloadBtn.style.opacity = 0.5;
+            }
+            return;
+        }
+        
+        // 显示下载中提示
+        showToast("正在准备下载...");
+        
+        try {
+            // 获取图片扩展名
+            const extension = getImageExtension(imageUrl) || 'png';
+            
+            // 构建文件名
+            const operation = window.state.selectedOperation || 'image';
+            const timestamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 14);
+            const fileName = `${operation}_${timestamp}.${extension}`;
+            
+            // 使用fetch下载图片
+            const response = await fetch(imageUrl);
+            
+            // 检查响应状态
+            if (!response.ok) {
+                throw new Error(`下载图片失败：HTTP状态 ${response.status}`);
+            }
+            
+            // 获取Blob对象
+            const blob = await response.blob();
+            
+            // 创建下载链接
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = fileName;
+            
+            // 触发下载
+            document.body.appendChild(link);
+            link.click();
+            
+            // 清理
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+            
+            // 显示成功提示
+            showToast("下载成功！", "success");
+        } catch (error) {
+            console.error("图片下载错误:", error);
+            
+            // 作为备选方案，尝试直接打开图片URL
+            showToast("直接下载失败，正在打开图片...", "warning");
+            
+            // 尝试在新窗口打开图片
+            window.open(imageUrl, '_blank');
+        }
+    } catch (error) {
+        console.error("处理下载操作时出错:", error);
+        showToast("下载失败：" + error.message, "error");
+    }
+}
+
+/**
+ * 初始化结果查看器
+ */
+function initResultViewer() {
+    // 关闭结果视图按钮
+    const closeResultBtn = document.getElementById('close-result-btn');
+    if (closeResultBtn) {
+        closeResultBtn.addEventListener('click', () => {
+            const resultContainer = document.getElementById('result-container');
+            if (resultContainer) {
+                console.log("关闭结果视图");
+                resultContainer.classList.remove('show');
+                // 延迟后添加hidden属性，让动画有时间执行
+                setTimeout(() => {
+                    resultContainer.setAttribute('hidden', '');
+                }, 300);
+            }
         });
-        
-        // 添加处理后的图片
-        if (Array.isArray(response.results)) {
-            response.results.forEach(result => {
-                const imgContainer = document.createElement('div');
-                imgContainer.className = 'result-image-container';
-                
-                const img = document.createElement('img');
-                img.src = result.url;
-                img.alt = '处理后的图片';
-                
-                const downloadBtn = document.createElement('button');
-                downloadBtn.className = 'download-btn';
-                downloadBtn.innerHTML = '<span class="material-symbols-rounded">download</span>';
-                downloadBtn.onclick = () => downloadImage(result.url);
-                
-                imgContainer.appendChild(img);
-                imgContainer.appendChild(downloadBtn);
-                processedImagesContainer.appendChild(imgContainer);
-            });
-        }
     }
     
-    // 显示结果视图
-    resultView.hidden = false;
+    // 下载按钮
+    const downloadBtn = document.getElementById('download-result-btn');
+    if (downloadBtn) {
+        downloadBtn.addEventListener('click', () => {
+            const processedImage = document.getElementById('processed-image');
+            if (processedImage && processedImage.src) {
+                handleDownload(processedImage.src);
+            } else if (window.state.processedImage) {
+                handleDownload(window.state.processedImage);
+            } else {
+                showToast('没有可下载的图片', 'error');
+            }
+        });
+    }
     
-    // 更新结果描述
-    updateResultDescription(response);
+    // 重试按钮
+    const retryBtn = document.getElementById('retry-btn');
+    if (retryBtn) {
+        retryBtn.addEventListener('click', handleRetry);
+    }
 }
 
 /**
@@ -787,359 +1165,60 @@ function initStyleSelection() {
 }
 
 /**
- * 初始化处理操作
- * 处理用户上传的图片或文本描述
+ * 初始化处理按钮
  */
 function initProcessingAction() {
     const startProcessingBtn = document.getElementById('start-processing');
-    if (!startProcessingBtn) return;
     
-    startProcessingBtn.addEventListener('click', async function() {
+    if (!startProcessingBtn) {
+        console.error("未找到处理按钮");
+        return;
+    }
+    
+    startProcessingBtn.addEventListener('click', async () => {
         try {
-            // 获取当前的图片和指令
-            const imageData = state.uploadedImages;
-            const operation = state.selectedOperation;
+            console.log("点击了开始处理按钮");
             
-            // 构建指令内容
-            let instruction = '';
+            // 禁用按钮防止重复点击
+            startProcessingBtn.disabled = true;
             
-            if (operation === 'generate') {
-                // 生成模式 - 使用文本描述
-                instruction = state.textDescription;
-                if (!instruction) {
-                    throw new Error('请输入图片描述');
-                }
-            } else if (operation === 'style') {
-                // 风格转换模式
-                if (!imageData) {
-                    throw new Error('请先上传图片');
-                }
-                
-                // 获取选择的风格或自定义风格
-                const style = state.selectedStyle;
-                let stylePrompt = '';
-                
-                if (style === 'custom' && state.customInstruction) {
-                    // 使用自定义风格指令
-                    stylePrompt = state.customInstruction;
-                } else {
-                    // 使用预定义风格
-                    switch(style) {
-                        case 'anime': stylePrompt = '动漫风格，清新可爱的日系动漫风格'; break;
-                        case 'oil': stylePrompt = '油画风格，厚重的笔触和丰富的色彩'; break;
-                        case 'sketch': stylePrompt = '素描风格，黑白素描效果'; break;
-                        case 'pixel': stylePrompt = '像素艺术风格，复古游戏像素效果'; break;
-                        case 'watercolor': stylePrompt = '水彩画风格，轻盈透明的水彩效果'; break;
-                        case 'comic': stylePrompt = '漫画风格，美式漫画风格，强调线条和分块色彩'; break;
-                        case 'vintage': stylePrompt = '复古风格，复古照片效果，怀旧色调'; break;
-                        case 'cyberpunk': stylePrompt = '赛博朋克风格，霓虹灯效果和未来感'; break;
-                        default: stylePrompt = '艺术风格';
+            // 获取当前操作类型
+            const operation = window.state.selectedOperation;
+            
+            // 获取并保存用户输入的风格指令（如果有）
+            if (operation === 'style') {
+                const styleInstructionInput = document.getElementById('style-custom-instruction');
+                if (styleInstructionInput) {
+                    const customInstruction = styleInstructionInput.value.trim();
+                    if (customInstruction) {
+                        window.state.styleInstruction = customInstruction;
+                        console.log("已保存自定义风格指令:", customInstruction);
                     }
                 }
-                
-                instruction = `请将这张图片转换为以下风格：${stylePrompt}。请保持图像主体特征，仅应用风格变化。`;
-                
-            } else if (operation === 'creative') {
-                // 创意生成模式
-                if (!imageData) {
-                    throw new Error('请先上传图片');
-                }
-                
-                const style = state.selectedStyle;
-                let creativePrompt = '';
-                
-                if (style === 'custom' && state.customInstruction) {
-                    // 使用自定义创意指令
-                    creativePrompt = state.customInstruction;
-                } else {
-                    // 使用预定义创意类型
-                    switch(style) {
-                        case 'creative': creativePrompt = '基于图片创建创意变体'; break;
-                        case 'poster': creativePrompt = '将图片转换为艺术海报'; break;
-                        case 'sticker': creativePrompt = '将主体转换为可爱的贴纸，带有白色边框'; break;
-                        default: creativePrompt = '创意变体';
-                    }
-                }
-                
-                instruction = `请基于这张图片创建以下效果：${creativePrompt}。请保持主体识别性，但可以添加创意元素。`;
-            } else {
-                throw new Error('未选择有效的操作类型');
             }
             
-            // 显示处理中状态
-            console.log("处理指令:", {
-                operation: operation,
-                instruction: instruction,
-                image: imageData ? '已上传' : '无'
-            });
-            
-            // 禁用重试逻辑，防止多次调用API
-            const maxRetries = 0; // 设为0表示禁用重试
-            let processingSuccess = false;
-            const timeoutSeconds = 180; // API最大等待时间
-            
-            // 显示加载指示器
-            showLoadingIndicator('准备处理请求...');
-            
-            // 创建和显示进度条
-            createProgressBar();
-            
-            // 准备进度文本
-            let progressStage = 0;
-            const progressStages = [
-                '正在分析请求...',
-                '正在处理图像数据...',
-                '正在应用创意效果...',
-                '正在生成最终结果...',
-                '正在优化输出质量...',
-                '请继续耐心等待...',
-                '处理需要较长时间，请再等待...',
-                '图像处理进行中，最长等待180秒...',
-                '生成高质量图片中，请稍候...'
-            ];
-            
-            // 创建进度更新函数
-            const updateProgress = (percentage = null, message = null) => {
-                if (percentage !== null) {
-                    // 如果有明确的进度百分比，直接使用它
-                    updateProgressBar(percentage, message || `处理进度: ${percentage}%`);
-                } else {
-                    // 否则使用预设的阶段性信息
-                    const stageMessage = progressStages[progressStage % progressStages.length];
-                    progressStage++;
-                    const estimatedProgress = Math.min(95, 5 + (progressStage * 10)); // 预估进度，最高95%
-                    updateProgressBar(estimatedProgress, stageMessage);
-                }
-            };
-            
-            // 启动初始进度更新
-            updateProgress(5, '开始处理请求...');
-            
-            // 仅在没有实时进度更新时，使用定时器模拟进度
-            let hasRealProgress = false;
-            const progressInterval = setInterval(() => {
-                if (!hasRealProgress) {
-                    updateProgress();
-                }
-            }, 15000); // 每15秒更新一次模拟进度
-
-                try {
-                    // 创建带超时的Promise
-                    const apiResponsePromise = new Promise(async (resolve, reject) => {
-                        try {
-                            // 设置超时计时器
-                            const timeoutId = setTimeout(() => {
-                                reject(new Error(`处理超时（${timeoutSeconds}秒）`));
-                            }, timeoutSeconds * 1000);
-                            
-                            // 调用API
-                            let response;
-                            if (imageData && imageData.length > 0) {
-                                // 获取选中的图片，如果没有选中则使用第一张
-                                const selectedImages = document.querySelectorAll('.preview-item.selected');
-                                let selectedImage;
-                                
-                                if (selectedImages.length > 0) {
-                                    // 使用选中的第一张图片
-                                    const filename = selectedImages[0].dataset.filename;
-                                    selectedImage = imageData.find(img => img.name === filename);
-                                } else {
-                                    // 如果没有选中的图片，使用第一张上传的图片
-                                    selectedImage = imageData[0];
-                                }
-                                
-                                console.log('将发送图片到API:', selectedImage.name);
-                                response = await window.API.processImageWithInstruction(selectedImage, instruction);
-                            } else {
-                                console.log('无图片数据，只发送文本指令');
-                                response = await window.API.processImageWithInstruction(null, instruction);
-                            }
-                            
-                            // 检查响应中是否包含进度信息
-                            if (response && response.type === 'progress') {
-                                // 标记有实时进度
-                                hasRealProgress = true;
-                                
-                                // 更新进度条和加载文本
-                                if (response.percentage) {
-                                    updateProgressBar(response.percentage, response.content || '正在处理中...');
-                                }
-                                
-                                // 继续轮询API直到处理完成
-                                let pollingCount = 0;
-                                const maxPolling = 60; // 最多轮询60次
-                                const pollingInterval = 3000; // 每3秒轮询一次
-                                
-                                while (pollingCount < maxPolling) {
-                                    // 等待一段时间后再次查询
-                                    await new Promise(r => setTimeout(r, pollingInterval));
-                                    
-                                    // 发送轮询请求查询进度
-                                    if (response.taskId) {
-                                        // 构建进度查询指令
-                                        const progressCheckInstruction = `查询任务进度: ${response.taskId}`;
-                                        const progressResponse = await window.API.processImageWithInstruction(null, progressCheckInstruction);
-                                        
-                                        // 检查是否有进度更新
-                                        if (progressResponse.type === 'progress') {
-                                            // 更新进度显示
-                                            if (progressResponse.percentage) {
-                                                hasRealProgress = true;
-                                                updateProgressBar(
-                                                    progressResponse.percentage, 
-                                                    progressResponse.content || `处理进度: ${progressResponse.percentage}%`
-                                                );
-                                            }
-                                            
-                                            if (progressResponse.percentage >= 100 || 
-                                                (progressResponse.content && progressResponse.content.includes('生成完成'))) {
-                                                // 处理完成，获取最终结果
-                                                response = progressResponse;
-                                                break;
-                                            }
-                                        } else if (progressResponse.type === 'text_and_image') {
-                                            // 收到最终结果
-                                            updateProgressBar(100, '处理完成！');
-                                            response = progressResponse;
-                                            break;
-                                        }
-                                    }
-                                    
-                                    pollingCount++;
-                                }
-                            }
-                            
-                            // 清除超时计时器
-                            clearTimeout(timeoutId);
-                            resolve(response);
-                        } catch (error) {
-                            reject(error);
-                        }
-                    });
-                    
-                    // 用于存储最后一次API响应，即使超时也可能有部分结果
-                    let lastApiResponse = null;
-                    
-                        // 等待API响应
-                        const apiResponse = await apiResponsePromise;
-                        lastApiResponse = apiResponse;
-                        
-                        console.log("API处理结果:", apiResponse);
-                        
-                        // 检查API响应是否成功
-                        if (apiResponse.status === 'error') {
-                    throw new Error(apiResponse.content || '处理请求失败');
-                        }
-                        
-                        // 提取处理结果
-                        if (apiResponse.type === 'text_and_image') {
-                            // 有图片和文字
-                            state.processedImage = apiResponse.imageUrl;
-                            state.processDescription = apiResponse.content || '处理完成！';
-                            
-                            // 记录原始图片尺寸，用于保持比例
-                            if (apiResponse.originalWidth && apiResponse.originalHeight) {
-                                state.originalWidth = apiResponse.originalWidth;
-                                state.originalHeight = apiResponse.originalHeight;
-                            }
-                            
-                            // 记录任务和生成ID
-                            if (apiResponse.taskId) state.taskId = apiResponse.taskId;
-                            if (apiResponse.genId) state.genId = apiResponse.genId;
-                            
-                    // 检查图片URL是否有效（必须是http开头的URL）
-                            if (!state.processedImage || 
-                        !(state.processedImage.startsWith('http') || state.processedImage.startsWith('data:'))) {
-                        console.error("API返回的图片URL无效:", state.processedImage);
-                        showToast('API返回的图片URL无效', 'error');
-                    } else {
-                        processingSuccess = true;
-                    }
-                } else if (apiResponse.type === 'text') {
-                    // 纯文本响应
-                    state.processDescription = apiResponse.content || '处理完成，但没有图片结果。';
-                    state.processedImage = null;
-                    
-                    if (apiResponse.status === 'success') {
-                            processingSuccess = true;
-                    }
-                        } else if (apiResponse.type === 'progress') {
-                    // 进度信息 - 已经有任务ID，但还没有最终结果
-                    if (apiResponse.taskId) {
-                        state.taskId = apiResponse.taskId;
-                    }
-                    if (apiResponse.genId) {
-                        state.genId = apiResponse.genId;
-                    }
-                    
-                    // 显示进度信息
-                    state.processDescription = `处理进行中：${apiResponse.content || '请等待结果'}`;
-                    
-                    // 等待一段时间后打开结果，可能会在结果页通过延迟响应获取完整结果
-                                processingSuccess = true;
-                            } else {
-                    console.error("未知的API响应类型:", apiResponse.type);
-                    throw new Error(`未知的API响应类型: ${apiResponse.type}`);
+            // 检查图片上传状态（对于非生成操作）
+            if (operation !== 'generate') {
+                if (!window.state.uploadedImages || window.state.uploadedImages.length === 0) {
+                    throw new Error("请先上传图片");
                 }
                 
-                // 更新进度条为100%
-                updateProgressBar(100, '处理完成！');
-            
-            // 清除进度更新定时器
-            clearInterval(progressInterval);
-            
-                // 隐藏加载指示器
-                hideLoadingIndicator();
-                
-                // 显示成功消息
-                showToast(processingSuccess ? '处理完成！' : '处理请求返回了错误', processingSuccess ? 'success' : 'error');
-                
-                // 显示处理结果
-                showResultView({
-                    originalImage: imageData ? URL.createObjectURL(imageData) : null,
-                    content: state.processDescription,
-                    imageUrl: state.processedImage,
-                    status: processingSuccess ? 'success' : 'error',
-                    originalWidth: state.originalWidth,
-                    originalHeight: state.originalHeight,
-                    taskId: state.taskId,
-                    genId: state.genId
-                });
-
-            } catch (error) {
-                console.error("API处理错误:", error);
-                
-                // 清除进度更新定时器
-                clearInterval(progressInterval);
-                
-                // 显示错误信息
-                let errorMessage = error.message || '处理请求时出错';
-                
-                // 尝试从最后一次响应中提取更多信息
-                if (lastApiResponse && lastApiResponse.content) {
-                    errorMessage += `\n\n${lastApiResponse.content}`;
-                }
-                
-                // 更新状态
-                state.processDescription = errorMessage;
-                state.processingStatus = 'error';
-                
-                // 如果API请求失败，使用错误处理函数
-                await handleApiFailure(
-                    operation, 
-                    imageData ? URL.createObjectURL(imageData) : null
-                );
-                
-                // 隐藏加载指示器
-            hideLoadingIndicator();
-            showToast(error.message || '处理图片失败，请重试', 'error');
+                console.log("检测到上传的图片:", window.state.uploadedImages.length, "张");
             }
+            
+            // 调用处理函数
+            await processImageWithInstruction();
+            
         } catch (error) {
-            console.error("准备处理请求时出错:", error);
-            showToast(error.message || '处理准备失败', 'error');
-            hideLoadingIndicator();
+            console.error("处理按钮事件错误:", error);
+            showToast(error.message, 'error');
+        } finally {
+            // 重新启用按钮
+            startProcessingBtn.disabled = false;
         }
     });
+    
+    console.log("处理按钮已初始化");
 }
 
 /**
@@ -1320,410 +1399,70 @@ function updateProgressBar(percentage, message) {
 }
 
 /**
- * 显示处理结果视图
- * @param {Object} response - API响应对象
- */
-function showResultView(response = null) {
-    try {
-        console.log("显示结果视图，响应数据:", response);
-        
-        // 如果提供了响应对象，使用它来更新状态
-        if (response) {
-            // 处理响应和原始图片
-            const hasOriginalImage = response.originalImage || (state.uploadedImages.length > 0 && state.selectedOperation !== 'generate');
-            const originalImageSrc = response.originalImage || (state.uploadedImages.length > 0 ? URL.createObjectURL(state.uploadedImages[0]) : '');
-            
-            // 处理结果图片
-            let processedImageSrc;
-            if (response.imageUrl) {
-                // 判断是否是远程URL或本地路径
-                if (response.imageUrl.startsWith('http') || response.imageUrl.startsWith('data:')) {
-                    processedImageSrc = response.imageUrl;
-                } else {
-                    // 本地文件路径
-                    processedImageSrc = response.imageUrl;
-                }
-                
-                // 设置状态
-                state.processedImage = processedImageSrc;
-            } else {
-                // 如果没有图片URL，不设置处理后的图片
-                state.processedImage = null;
-            }
-            
-            state.processDescription = response.content || '处理完成';
-            state.processingStatus = response.status || 'success';
-            
-            // 记录原始尺寸
-            if (response.originalWidth) state.originalWidth = response.originalWidth;
-            if (response.originalHeight) state.originalHeight = response.originalHeight;
-        }
-        
-        // 获取结果容器元素
-        const resultContainer = document.getElementById('result-container');
-        const originalImage = document.getElementById('original-image');
-        const processedImage = document.getElementById('processed-image');
-        const resultDescription = document.getElementById('result-description');
-        const resultComparison = document.querySelector('.result-comparison');
-        const resultOriginal = document.querySelector('.result-original');
-        const resultProcessed = document.querySelector('.result-processed');
-        const downloadResultBtn = document.getElementById('download-result-btn');
-        
-        if (!resultContainer || !resultDescription) {
-            console.error("找不到结果容器元素");
-            showToast("无法显示结果，请重新加载页面", "error");
-            return;
-        }
-
-        // 判断是否有原始图片（生成模式下没有原始图片）
-        const hasOriginalImage = state.uploadedImages.length > 0 && state.selectedOperation !== 'generate';
-        
-        // 检查是否有处理后的图片
-        const hasProcessedImage = state.processedImage !== null;
-        
-        // 处理仅文本响应 - 无图片情况
-        if (!hasProcessedImage) {
-            console.log("仅文本响应，无图片显示");
-            
-            // 隐藏图片比较区域，显示全屏错误信息
-            if (resultComparison) {
-                resultComparison.style.display = 'none';
-            }
-            
-            // 扩大描述区域
-            if (resultDescription) {
-                resultDescription.classList.add('full-width-error');
-                resultDescription.style.maxWidth = '800px';
-                resultDescription.style.margin = '0 auto';
-            }
-            
-            // 禁用下载按钮
-            if (downloadResultBtn) {
-                downloadResultBtn.disabled = true;
-                downloadResultBtn.style.opacity = '0.5';
-                downloadResultBtn.style.cursor = 'not-allowed';
-            }
-            
-            // 设置描述内容
-            resultDescription.innerHTML = state.processDescription || '';
-            
-            // 显示结果容器
-            resultContainer.hidden = false;
-            setTimeout(() => {
-                resultContainer.classList.add('show');
-                
-                // 确保结果内容完全可见
-                const resultContent = document.querySelector('.result-content');
-                if (resultContent) {
-                    resultContent.scrollTop = 0;
-                }
-            }, 50);
-            
-            return;
-        }
-        
-        // 重置布局 - 如果之前显示过纯文本，确保图片比较区域可见
-        if (resultComparison) {
-            resultComparison.style.display = 'flex';
-        }
-        
-        if (resultDescription) {
-            resultDescription.classList.remove('full-width-error');
-            resultDescription.style.maxWidth = '';
-            resultDescription.style.margin = '';
-        }
-        
-        // 启用下载按钮
-        if (downloadResultBtn) {
-            downloadResultBtn.disabled = false;
-            downloadResultBtn.style.opacity = '';
-            downloadResultBtn.style.cursor = '';
-        }
-        
-        // 为生成模式特别处理 - 隐藏原始图片区域
-        if (state.selectedOperation === 'generate') {
-            if (resultOriginal && resultProcessed) {
-                // 隐藏原始图片区域
-                resultOriginal.style.display = 'none';
-                // 让处理后的图片占据全宽
-                resultProcessed.classList.add('full-width');
-                console.log("生成模式: 隐藏原始图片区域，设置处理后图片为全宽");
-            }
-        } 
-        // 对于其他操作模式，显示原始图片
-        else if (hasOriginalImage && originalImage) {
-            originalImage.src = URL.createObjectURL(state.uploadedImages[0]);
-            
-            if (resultOriginal && resultProcessed) {
-                resultOriginal.style.display = 'flex';
-                resultProcessed.classList.remove('full-width');
-                
-                // 读取原始图片的尺寸，为两边的容器设置相同的高度
-                originalImage.onload = function() {
-                    console.log("原始图片加载成功，尺寸:", this.naturalWidth, "x", this.naturalHeight);
-                    
-                    // 保存原图尺寸信息，如果之前没有设置的话
-                    if (!state.originalWidth || !state.originalHeight) {
-                        state.originalWidth = this.naturalWidth;
-                        state.originalHeight = this.naturalHeight;
-                    }
-                    
-                    // 设置原图的宽高比
-                    originalImage.style.aspectRatio = `${state.originalWidth} / ${state.originalHeight}`;
-                    
-                    // 确保结果显示区域高度足够
-                    if (resultComparison) {
-                        const minHeight = Math.min(500, Math.max(300, this.naturalHeight / 2));
-                        resultComparison.style.minHeight = `${minHeight}px`;
-                    }
-                };
-            }
-        } else {
-            // 如果没有原始图片，隐藏原始图片区域
-            if (resultOriginal && resultProcessed) {
-            resultOriginal.style.display = 'none';
-            resultProcessed.classList.add('full-width');
-            }
-        }
-        
-        // 设置处理后的图片
-        if (state.processedImage && processedImage) {
-            // 确保处理后的图片URL有效，必须是http开头的URL或数据URL
-            if (state.processedImage.startsWith('http') || state.processedImage.startsWith('data:')) {
-            processedImage.src = state.processedImage;
-            console.log("设置处理后图片URL:", state.processedImage);
-            
-            // 保持原始图片的宽高比
-            if (state.originalWidth && state.originalHeight) {
-                // 根据原始尺寸设置样式
-                processedImage.style.aspectRatio = `${state.originalWidth} / ${state.originalHeight}`;
-                console.log(`设置图片宽高比: ${state.originalWidth} / ${state.originalHeight}`);
-                } else if (state.selectedOperation === 'generate') {
-                    // 生成模式下默认使用16:9的比例
-                    processedImage.style.aspectRatio = "16/9";
-                    console.log("生成模式: 设置默认宽高比 16/9");
-            }
-            
-            // 添加图片加载事件，确保图片正确加载
-            processedImage.onload = function() {
-                console.log("处理后图片加载成功，尺寸:", this.naturalWidth, "x", this.naturalHeight);
-                
-                // 如果没有原始尺寸信息，使用当前图片的尺寸
-                if (!state.originalWidth || !state.originalHeight) {
-                    state.originalWidth = this.naturalWidth;
-                    state.originalHeight = this.naturalHeight;
-                        
-                        // 更新宽高比
-                        processedImage.style.aspectRatio = `${this.naturalWidth} / ${this.naturalHeight}`;
-                    }
-                    
-                    // 更新下载按钮，关联当前图片
-                    if (downloadResultBtn) {
-                        downloadResultBtn.onclick = function() {
-                            downloadProcessedImage();
-                        };
-                        downloadResultBtn.disabled = false;
-                    }
-                };
-                
-                // 处理加载失败的情况
-            processedImage.onerror = function() {
-                console.error("处理后图片加载失败:", state.processedImage);
-                    
-                    // 显示错误信息，并设置备选图像
-                    processedImage.src = 'assets/examples/error.jpg';
-                    processedImage.alt = '图片加载失败';
-                    
-                    // 更新描述
-                if (resultDescription) {
-                        let errorHtml = `<div class="error-message">
-                            <strong>图片加载失败</strong>
-                            <p>无法加载处理后的图片，请检查URL是否有效：${state.processedImage}</p>
-                            <p>如果有任务ID和生成ID，您可以尝试直接访问：</p>
-                        </div>`;
-                        
-                        if (state.taskId && state.genId) {
-                            const directUrl = `https://videoopenai.filesystem.site/vg-assets/assets/${state.taskId}/${state.genId}.png`;
-                            errorHtml += `<div class="direct-link"><a href="${directUrl}" target="_blank">直接访问图片</a></div>`;
-                        }
-                        
-                        resultDescription.innerHTML = errorHtml + (resultDescription.innerHTML || '');
-                    }
-                    
-                    // 禁用下载按钮
-                    if (downloadResultBtn) {
-                        downloadResultBtn.disabled = true;
-                    }
-                };
-            } else {
-                console.error("处理后图片URL无效:", state.processedImage);
-                
-                // 显示错误
-                processedImage.src = 'assets/examples/error.jpg';
-                processedImage.alt = '图片URL无效';
-                
-                // 更新描述
-                if (resultDescription) {
-                    const errorHtml = `<div class="error-message">
-                        <strong>图片URL无效</strong>
-                        <p>系统返回的图片URL格式不正确：${state.processedImage}</p>
-                    </div>`;
-                    resultDescription.innerHTML = errorHtml + (resultDescription.innerHTML || '');
-                }
-                
-                // 禁用下载按钮
-                if (downloadResultBtn) {
-                    downloadResultBtn.disabled = true;
-                }
-            }
-        } else {
-            console.warn("没有处理后的图片可显示");
-            
-            // 如果没有处理后的图片但有错误信息
-            if (state.processingStatus === 'error' && state.processDescription) {
-                const errorMessage = `<div class="error-message">
-                    <strong>处理失败</strong>
-                    <p>${state.processDescription}</p>
-                </div>`;
-                resultDescription.innerHTML = errorMessage;
-                
-                // 显示一个占位符图像
-                processedImage.src = 'assets/examples/error.jpg'; 
-                processedImage.alt = '处理失败';
-                
-                // 禁用下载按钮
-                if (downloadResultBtn) {
-                    downloadResultBtn.disabled = true;
-                }
-            }
-        }
-        
-        // 设置描述内容
-        let descriptionContent = '';
-        
-        // 添加操作类型标签
-        if (state.processingStatus === 'error') {
-            descriptionContent += '<span class="operation-tag error">处理出错</span>';
-        } else {
-            switch(state.selectedOperation) {
-                case 'generate':
-                    descriptionContent += '<span class="operation-tag generate">一句话生成美图</span>';
-                    break;
-                case 'style':
-                    descriptionContent += '<span class="operation-tag style">风格转换</span>';
-                    break;
-                case 'creative':
-                    descriptionContent += '<span class="operation-tag creative">创意生成</span>';
-                    break;
-                default:
-                    descriptionContent += '<span class="operation-tag">图像处理</span>';
-            }
-        }
-        
-        // 添加处理描述
-        descriptionContent += state.processDescription || '';
-        resultDescription.innerHTML = descriptionContent;
-        
-        // 显示结果容器
-        resultContainer.hidden = false;
-        
-        // 稍微延迟显示，让浏览器有时间计算布局
-        setTimeout(() => {
-            resultContainer.classList.add('show');
-            
-            // 确保结果内容完全可见
-            const resultContent = document.querySelector('.result-content');
-            if (resultContent) {
-                resultContent.scrollTop = 0;
-            }
-        }, 50);
-    } catch (error) {
-        console.error("显示结果视图时出错:", error);
-        showToast("显示结果时出错: " + error.message, "error");
-    }
-}
-
-/**
  * 重置全部状态，准备新的处理
  */
 function resetState() {
-    // 重置所有状态变量
-    state.currentStep = 1;
-    state.uploadedImages = [];
-            state.selectedOperation = null;
-    state.textDescription = '';
-            state.selectedStyle = null;
-            state.customInstruction = '';
-    state.processedResult = null;
-    state.requiresImage = false;
-    state.imageOptional = false;
+    window.state = {
+        currentStep: 1,
+        selectedOperation: null,
+        selectedStyle: null,
+        selectedCreativeStyle: null,
+        uploadedImages: [],
+        uploadedImageUrl: null, // 添加上传图片的URL
+        imageDescription: '',
+        styleInstruction: '',
+        creativeInstruction: '',
+        customInstruction: '',
+        processedImage: null,
+        processingSuccess: false,
+        processDescription: '',
+        taskId: null,
+        genId: null,
+        originalWidth: null,
+        originalHeight: null,
+        lastApiResponse: null, // 添加最后一次API响应存储
+        processingError: null // 添加处理错误存储
+    };
     
-    // 重置UI状态
-    document.querySelectorAll('.step-indicator').forEach((indicator, index) => {
-        indicator.classList.remove('active', 'complete');
-        if (index === 0) {
-            indicator.classList.add('active');
-        }
-    });
+    console.log("状态已重置");
     
-    document.querySelectorAll('.step-connector').forEach(connector => {
-        connector.classList.remove('half', 'complete');
-    });
+    // 重置UI元素
+    const previewContainer = document.getElementById('images-preview');
+    if (previewContainer) {
+        previewContainer.innerHTML = '';
+    }
     
-    document.querySelectorAll('.step-content').forEach((content, index) => {
-        content.classList.remove('active');
-        if (index === 0) {
-            content.classList.add('active');
-        }
-    });
+    const imageDescription = document.getElementById('image-description');
+    if (imageDescription) {
+        imageDescription.value = '';
+    }
     
-    // 重置选择状态
-    document.querySelectorAll('.operation-option, .style-option, .creative-style-option').forEach(option => {
+    const styleInstruction = document.getElementById('style-custom-instruction');
+    if (styleInstruction) {
+        styleInstruction.value = '';
+    }
+    
+    // 移除所有选中的操作
+    const operationOptions = document.querySelectorAll('.operation-option');
+    operationOptions.forEach(option => {
         option.classList.remove('selected');
     });
     
-    // 重置图片上传
-    const uploadArea = document.getElementById('upload-area');
-    if (uploadArea) {
-        const uploadInner = uploadArea.querySelector('.upload-inner');
-        if (uploadInner) uploadInner.style.display = 'block';
-    }
+    // 移除所有选中的风格
+    const styleOptions = document.querySelectorAll('.style-option');
+    styleOptions.forEach(option => {
+        option.classList.remove('selected');
+    });
     
-    const imagePreview = document.getElementById('image-preview');
-    if (imagePreview) {
-        imagePreview.hidden = true;
-        // 确保预览图片也被清空
-        const previewImage = document.getElementById('preview-image');
-        if (previewImage) previewImage.src = '';
-    }
+    const creativeOptions = document.querySelectorAll('.creative-style-option');
+    creativeOptions.forEach(option => {
+        option.classList.remove('selected');
+    });
     
-    const fileInput = document.getElementById('file-input');
-    if (fileInput) fileInput.value = '';
+    // 重置按钮状态
+    checkAndEnableNextButton();
     
-    // 重置文字描述
-    const imageDescription = document.getElementById('image-description');
-    if (imageDescription) imageDescription.value = '';
-    
-    // 重置自定义指令
-    const customInstruction = document.getElementById('custom-instruction');
-    if (customInstruction) customInstruction.value = '';
-    
-    // 禁用下一步按钮
-    const nextToStep2Btn = document.getElementById('next-to-step2');
-    if (nextToStep2Btn) nextToStep2Btn.disabled = true;
-    
-    const nextToStep3Btn = document.getElementById('next-to-step3');
-    if (nextToStep3Btn) nextToStep3Btn.disabled = true;
-    
-    // 恢复步骤3标题到默认值
-    const step3Indicator = document.querySelector('.step-indicator[data-step="3"]');
-    if (step3Indicator) {
-        const step3Name = step3Indicator.querySelector('.step-name');
-        const step3Desc = step3Indicator.querySelector('.step-desc');
-        
-        if (step3Name) step3Name.textContent = '选择风格';
-        if (step3Desc) step3Desc.textContent = '指定转换风格';
-    }
+    console.log("UI已重置");
 }
 
 /**
@@ -1788,156 +1527,9 @@ function formatMarkdown(text) {
 }
 
 /**
- * 初始化结果查看功能
- */
-function initResultViewer() {
-    const resultContainer = document.getElementById('result-container');
-    const closeResultBtn = document.getElementById('close-result-btn');
-    const downloadResultBtn = document.getElementById('download-result-btn');
-    const retryBtn = document.getElementById('retry-btn');
-    const originalImage = document.getElementById('original-image');
-    const processedImage = document.getElementById('processed-image');
-    
-    // 关闭结果弹窗
-    closeResultBtn.addEventListener('click', function() {
-        resultContainer.classList.remove('show');
-        setTimeout(() => {
-            resultContainer.hidden = true;
-        }, 300);
-    });
-    
-    // 下载结果
-    downloadResultBtn.addEventListener('click', function() {
-        try {
-            if (state.processedImage) {
-                console.log("开始下载图片:", state.processedImage);
-                
-                // 获取已加载的图片元素
-                const imgElement = document.getElementById('processed-image');
-                
-                // 如果图片尚未加载完成，提示用户等待
-                if (!imgElement.complete || !imgElement.naturalWidth) {
-                    showToast('图片正在加载中，请稍候再试', 'warning');
-                    return;
-                }
-                
-                // 根据图片来源处理下载方式
-                if (state.processedImage.startsWith('data:')) {
-                    // 如果是base64格式，直接下载
-                    const link = document.createElement('a');
-                    link.href = state.processedImage;
-                    link.download = `processed-image-${new Date().getTime()}.png`;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    showToast('图片下载已开始', 'success');
-                }
-                else if (state.processedImage.startsWith('http')) {
-                    // 对于远程URL，创建一个Canvas元素绘制图片，再导出为DataURL下载
-                    // 这样可以避免跨域问题
-                    const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d');
-                    
-                    // 设置Canvas尺寸为图片实际尺寸
-                    canvas.width = imgElement.naturalWidth;
-                    canvas.height = imgElement.naturalHeight;
-                    
-                    // 绘制图片到Canvas
-                    ctx.drawImage(imgElement, 0, 0, canvas.width, canvas.height);
-                    
-                    // 尝试导出为图片
-                    try {
-                        const dataUrl = canvas.toDataURL('image/png');
-                        
-                        // 创建下载链接
-                        const link = document.createElement('a');
-                        link.href = dataUrl;
-                        
-                        // 从URL中提取文件名
-                        let fileName = 'processed-image';
-                        const urlParts = state.processedImage.split('/');
-                        const possibleFileName = urlParts[urlParts.length - 1];
-                        
-                        // 如果URL末尾部分看起来像文件名，使用它
-                        if (possibleFileName && possibleFileName.includes('.')) {
-                            fileName = possibleFileName;
-                        } else {
-                            fileName = `${fileName}-${new Date().getTime()}.png`;
-                        }
-                        
-                        link.download = fileName;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        
-                        showToast('图片下载已开始', 'success');
-                    } catch (canvasError) {
-                        console.error('Canvas导出图片失败:', canvasError);
-                        
-                        // 如果Canvas导出失败，尝试直接打开图片URL
-                        showToast('直接下载失败，将在新窗口打开图片', 'warning');
-                        window.open(state.processedImage, '_blank');
-                    }
-                } else {
-                    // 对于本地文件路径
-                    console.log("尝试下载本地图片:", state.processedImage);
-                    
-                    // 创建下载链接
-                    const link = document.createElement('a');
-                    link.href = state.processedImage;
-                    
-                    // 从路径中提取文件名
-                    const pathParts = state.processedImage.split('/');
-                    const fileName = pathParts[pathParts.length - 1] || `processed-image-${new Date().getTime()}.jpg`;
-                    
-                    link.download = fileName;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    
-                    showToast('图片下载已开始', 'success');
-                }
-            } else {
-                showToast('下载失败，未找到处理后的图片', 'error');
-            }
-        } catch (error) {
-            console.error('图片下载失败:', error);
-            showToast(`下载失败: ${error.message}`, 'error', 5000);
-            
-            // 如果下载失败，尝试在新窗口打开图片
-            if (state.processedImage && state.processedImage.startsWith('http')) {
-                setTimeout(() => {
-                    if (confirm('下载失败，是否在新窗口打开图片？')) {
-                        window.open(state.processedImage, '_blank');
-                    }
-                }, 1000);
-            }
-        }
-    });
-    
-    // 重新处理
-    retryBtn.addEventListener('click', function() {
-        // 隐藏结果
-        resultContainer.classList.remove('show');
-        setTimeout(() => {
-            resultContainer.hidden = true;
-            
-            // 根据当前操作类型重置到相应步骤
-            if (state.selectedOperation === 'style') {
-                // 风格转换 - 回到选择风格步骤
-                goToStep(3);
-            } else {
-                // 其他操作 - 回到图片处理步骤
-                goToStep(2);
-            }
-        }, 300);
-    });
-}
-
-/**
  * 处理API调用失败
  * @param {string} operation - 操作类型
- * @param {string} originalImageSrc - 原始图片URL
+ * @param {string|null} originalImageSrc - 原始图片URL，可以为null
  */
 async function handleApiFailure(operation, originalImageSrc) {
     console.log("API调用失败，显示错误信息");
@@ -1949,28 +1541,27 @@ async function handleApiFailure(operation, originalImageSrc) {
     try {
         console.log("检查是否有延迟响应...");
         
-    const delayedResponse = await window.API.checkDelayedResponse();
+        const delayedResponse = await window.API.checkDelayedResponse();
         
         if (delayedResponse && delayedResponse.imageUrl) {
-        console.log("在handleApiFailure中发现延迟响应:", delayedResponse);
-        
+            console.log("在handleApiFailure中发现延迟响应:", delayedResponse);
+            
             // 使用延迟响应，而不是显示错误
-        showResultView({
-            type: 'text_and_image',
-            content: delayedResponse.content || '处理完成（延迟响应）',
-            imageUrl: delayedResponse.imageUrl,
-            status: 'success',
-            originalImage: originalImageSrc,
-            originalWidth: delayedResponse.originalWidth,
-            originalHeight: delayedResponse.originalHeight
-        });
-        
-        // 隐藏加载指示器
-        hideLoadingIndicator();
-        
-        // 显示提示
-        showToast('处理成功（延迟响应）', 'success');
-        
+            showResultView({
+                type: 'text_and_image',
+                content: delayedResponse.content || '处理完成（延迟响应）',
+                imageUrl: delayedResponse.imageUrl,
+                status: 'success',
+                originalWidth: delayedResponse.originalWidth,
+                originalHeight: delayedResponse.originalHeight
+            });
+            
+            // 隐藏加载指示器
+            hideLoadingIndicator();
+            
+            // 显示提示
+            showToast('处理成功（延迟响应）', 'success');
+            
             return; // 直接返回，不显示错误信息
         } else {
             console.log("没有找到延迟响应或响应不包含图片，显示错误信息");
@@ -1980,18 +1571,45 @@ async function handleApiFailure(operation, originalImageSrc) {
     }
     
     // 创建友好的错误消息
+    let errorTitle = "图像处理未成功";
+    let errorSuggestions = [
+        '检查您的网络连接是否稳定',
+        '稍后再试，服务器可能暂时繁忙',
+        '尝试使用不同的描述或风格',
+        '尝试使用不同的图片（分辨率较低的图片处理速度可能更快）'
+    ];
+    
+    // 检查错误内容，提供更具体的建议
+    const errorDesc = window.state.processDescription || '';
+    
+    if (errorDesc.includes('检测到崩溃') || errorDesc.includes('interface conversion')) {
+        errorTitle = "服务器暂时不可用";
+        errorSuggestions = [
+            '服务器可能正在维护或临时性崩溃',
+            '稍等几分钟后再试',
+            '可能API请求格式有问题，尝试刷新页面重新开始',
+            '如果问题持续，请联系网站管理员'
+        ];
+    } else if (errorDesc.includes('no_more_channels_available') || errorDesc.includes('负载已饱和')) {
+        errorTitle = "服务器负载已满";
+        errorSuggestions = [
+            '服务器当前请求量过大，请稍后再试',
+            '尝试在非高峰时段使用',
+            '可以尝试使用较低分辨率的图片',
+            '如果问题持续，请联系网站管理员'
+        ];
+    }
+    
+    // 创建错误消息HTML
     let errorMessage = `
         <div class="error-view">
             <div class="error-icon">
                 <span class="material-symbols-rounded">error_outline</span>
             </div>
-            <h3>图像处理未成功</h3>
+            <h3>${errorTitle}</h3>
             <p>在${getOperationName(operation)}过程中遇到了问题。以下是可能的解决方案：</p>
             <ul class="error-suggestions">
-                <li>检查您的网络连接是否稳定</li>
-                <li>稍后再试，服务器可能暂时繁忙</li>
-                <li>尝试使用不同的描述或风格</li>
-                <li>尝试使用不同的图片（分辨率较低的图片处理速度可能更快）</li>
+                ${errorSuggestions.map(suggestion => `<li>${suggestion}</li>`).join('')}
             </ul>
             <div class="error-actions">
                 <button id="retry-error-btn" class="btn primary-btn">
@@ -2010,8 +1628,7 @@ async function handleApiFailure(operation, originalImageSrc) {
     showResultView({
         type: 'text',
         content: errorMessage,
-        status: 'error',
-        originalImage: originalImageSrc
+        status: 'error'
     });
     
     // 为错误视图中的按钮添加事件监听器
@@ -2020,18 +1637,16 @@ async function handleApiFailure(operation, originalImageSrc) {
         const backErrorBtn = document.getElementById('back-error-btn');
         
         if (retryErrorBtn) {
-            retryErrorBtn.addEventListener('click', () => {
-                // 根据操作类型重新处理
-                if (operation === 'style' && (state.selectedStyle || state.customStyleInstruction)) {
-                    startProcessStyle();
-                } else if (operation === 'generate' && state.textDescription) {
-                    startProcessGenerate();
-                } else if (operation === 'creative') {
-                    // 创意生成处理
-                    startProcessCreative();
-                } else {
-                    // 返回到输入界面
-                    showInputView();
+            retryErrorBtn.addEventListener('click', async () => {
+                try {
+                    // 显示加载提示
+                    showToast('正在重新尝试...', 'info');
+                    
+                    // 调用重试函数
+                    await handleRetry();
+                } catch (error) {
+                    console.error('重试错误:', error);
+                    showToast(`重试失败: ${error.message}`, 'error');
                 }
             });
         }
@@ -2248,12 +1863,124 @@ async function downloadRemoteImage(url) {
 
 /**
  * 初始化图片上传功能
- * 注意：此功能现已由ui.js中的同名函数实现，本函数仅作为兼容性保留
  */
 function initImageUpload() {
-    console.log("process.js中的initImageUpload函数已被ui.js替代，为避免冲突不执行实际操作");
-    // 保留空实现以避免可能的引用错误
-    return;
+    const uploadArea = document.getElementById('upload-area');
+    const fileInput = document.getElementById('file-input');
+    const uploadBtn = document.querySelector('.upload-btn');
+    
+    if (!uploadArea || !fileInput || !uploadBtn) {
+        console.error('未找到图片上传元素');
+        return;
+    }
+    
+    // 点击上传按钮触发文件选择
+    uploadBtn.addEventListener('click', () => {
+        console.log("点击了上传按钮，触发文件选择");
+        fileInput.click();
+    });
+    
+    // 文件选择变化时处理上传
+    fileInput.addEventListener('change', (e) => {
+        console.log("文件选择变化，处理文件上传");
+        const files = e.target.files;
+        
+        if (!files || files.length === 0) {
+            console.log("没有选择文件");
+            return;
+        }
+        
+        console.log("选择了", files.length, "个图片文件");
+        
+        // 处理上传的图片
+        handleFilesUpload(files);
+    });
+    
+    // 拖放上传
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        uploadArea.classList.add('dragover');
+    });
+    
+    uploadArea.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        uploadArea.classList.remove('dragover');
+    });
+    
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        uploadArea.classList.remove('dragover');
+        
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+            console.log("拖放上传了", files.length, "个文件");
+            handleFilesUpload(files);
+        }
+    });
+    
+    console.log("图片上传功能已初始化");
+}
+
+/**
+ * 处理上传的文件
+ * @param {FileList} files - 上传的文件列表
+ */
+function handleFilesUpload(files) {
+    try {
+        console.log("处理上传的图片文件");
+        
+        // 检查文件类型
+        const imageFiles = Array.from(files).filter(file => {
+            const isImage = file.type.startsWith('image/');
+            if (!isImage) {
+                console.warn(`跳过非图片文件: ${file.name}`);
+            }
+            return isImage;
+        });
+        
+        if (imageFiles.length === 0) {
+            showToast('请上传有效的图片文件（JPG, PNG, GIF等）', 'error');
+            return;
+        }
+        
+        // 检查文件大小
+        const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB上限
+        const validFiles = imageFiles.filter(file => {
+            const isValidSize = file.size <= MAX_FILE_SIZE;
+            if (!isValidSize) {
+                console.warn(`文件过大: ${file.name} (${Math.round(file.size / 1024 / 1024)}MB)`);
+                showToast(`文件 ${file.name} 超过10MB上限，已忽略`, 'warning');
+            }
+            return isValidSize;
+        });
+        
+        if (validFiles.length === 0) {
+            return;
+        }
+        
+        // 清除之前的上传
+        window.state.uploadedImages = [];
+        
+        // 我们只处理第一张图片
+        const imageFile = validFiles[0];
+        
+        // 更新状态
+        window.state.uploadedImages = [imageFile];
+        console.log("已同步更新state.uploadedImages，仅保留一张图片:", imageFile.name);
+        
+        // 创建预览 - 只创建一张预览图
+        createImagePreview(imageFile);
+        
+        // 更新按钮状态
+        checkAndEnableNextButton();
+        
+    } catch (error) {
+        console.error('处理文件上传时出错:', error);
+        showToast('上传图片时出错: ' + error.message, 'error');
+    }
 }
 
 /**
@@ -2387,4 +2114,785 @@ function updateStep3UI() {
             styleOption.click();
         }
     }
+}
+
+/**
+ * 从URL或文件名中获取图片扩展名
+ * @param {string} url - 图片URL或文件名
+ * @returns {string} 图片扩展名
+ */
+function getImageExtension(url) {
+    if (!url) return 'png';
+    
+    try {
+        // 尝试从URL中提取扩展名
+        const urlObj = new URL(url);
+        const pathname = urlObj.pathname;
+        const filename = pathname.split('/').pop() || '';
+        const ext = filename.split('.').pop()?.toLowerCase();
+        
+        // 检查是否获取到有效的扩展名
+        if (ext && /^(jpg|jpeg|png|gif|webp|avif)$/i.test(ext)) {
+            return ext;
+        }
+    } catch (error) {
+        console.warn('无法解析URL:', error);
+        // 如果不是有效URL，尝试直接从字符串提取
+        const match = url.match(/\.([a-zA-Z0-9]+)(?:\?.*)?$/);
+        if (match && match[1] && /^(jpg|jpeg|png|gif|webp|avif)$/i.test(match[1])) {
+            return match[1].toLowerCase();
+        }
+    }
+    
+    // 检查URL中是否包含特定图片格式的提示
+    if (url.includes('format=webp') || url.includes('fmt=webp')) return 'webp';
+    if (url.includes('format=jpg') || url.includes('fmt=jpg')) return 'jpg';
+    if (url.includes('format=png') || url.includes('fmt=png')) return 'png';
+    
+    // 对于data URL，检查MIME类型
+    if (url.startsWith('data:')) {
+        if (url.includes('image/jpeg')) return 'jpg';
+        if (url.includes('image/png')) return 'png';
+        if (url.includes('image/webp')) return 'webp';
+        if (url.includes('image/gif')) return 'gif';
+    }
+    
+    // 如果无法确定，默认返回png
+    return 'png';
+}
+
+/**
+ * 处理重试按钮点击事件
+ */
+async function handleRetry() {
+    try {
+        console.log("执行重试操作");
+        
+        // 清除任何错误状态
+        window.state.processingError = null;
+        
+        // 检查是否有上次的请求信息
+        if (!window.state.selectedOperation) {
+            throw new Error("没有找到上次的操作信息，无法重试");
+        }
+        
+        // 获取当前操作类型和图片
+        const operation = window.state.selectedOperation;
+        let imageFile = null;
+        
+        // 如果不是生成操作，需要获取图片
+        if (operation !== 'generate' && window.state.uploadedImages && window.state.uploadedImages.length > 0) {
+            imageFile = window.state.uploadedImages[0];
+        }
+        
+        // 显示加载指示器
+        showLoadingIndicator('正在重新处理...');
+        
+        // 创建进度条
+        createProgressBar();
+        updateProgressBar(10, '准备重新处理...');
+        
+        // 构建指令
+        let instruction = '';
+        if (operation === 'generate') {
+            // 生成操作的指令
+            instruction = window.state.imageDescription || '';
+            if (!instruction) {
+                throw new Error("没有找到图片描述，无法重试生成操作");
+            }
+        } else if (operation === 'style') {
+            // 风格转换操作的指令
+            let style = window.state.selectedStyle;
+            instruction = window.state.styleInstruction || '';
+            
+            // 如果没有自定义指令，尝试使用预设风格
+            if (!instruction && style) {
+                // 根据预设风格生成指令
+                instruction = getStyleInstruction(style);
+            }
+            
+            if (!instruction) {
+                throw new Error("没有找到风格指令，无法重试风格转换操作");
+            }
+        } else if (operation === 'creative') {
+            // 创意生成操作的指令
+            let creativeStyle = window.state.selectedCreativeStyle;
+            instruction = window.state.creativeInstruction || '';
+            
+            // 如果没有自定义指令，尝试使用预设创意风格
+            if (!instruction && creativeStyle) {
+                // 根据预设创意风格生成指令
+                instruction = getCreativeInstruction(creativeStyle);
+            }
+            
+            if (!instruction) {
+                throw new Error("没有找到创意指令，无法重试创意生成操作");
+            }
+        }
+        
+        if (!instruction) {
+            throw new Error("无法构建有效的指令，重试失败");
+        }
+        
+        // 更新进度条
+        updateProgressBar(20, '指令已准备，准备发送请求...');
+        
+        // 设置进度定时器
+        let progress = 20;
+        const progressInterval = setInterval(() => {
+            if (progress < 90) {
+                progress += Math.floor(Math.random() * 3) + 1;
+                updateProgressBar(progress, '正在处理中...');
+            }
+        }, 1000);
+        
+        try {
+            console.log("重新发送API请求，操作类型:", operation, "指令:", instruction);
+            
+            // 发送API请求
+            const apiResponse = await window.API.processImageWithInstruction(imageFile, instruction);
+            
+            // 清除进度定时器
+            clearInterval(progressInterval);
+            
+            // 处理API响应
+            if (apiResponse) {
+                console.log("API重试响应:", apiResponse);
+                
+                // 更新进度条为完成状态
+                updateProgressBar(100, '处理完成!');
+                
+                // 如果是成功的图片处理，保存图片URL
+                if (apiResponse.imageUrl) {
+                    window.state.processedImage = apiResponse.imageUrl;
+                    window.state.taskId = apiResponse.taskId || null;
+                    window.state.genId = apiResponse.genId || null;
+                    
+                    // 设置处理成功标志
+                    window.state.processingSuccess = true;
+                    window.state.processDescription = apiResponse.content || '处理完成';
+                } else {
+                    // 处理失败
+                    window.state.processingSuccess = false;
+                    window.state.processDescription = apiResponse.content || '处理失败';
+                    
+                    console.warn("API重试无法获取图片URL", apiResponse);
+                }
+                
+                // 显示处理结果
+                showResultView(apiResponse);
+            } else {
+                throw new Error("API重试返回空响应");
+            }
+        } catch (error) {
+            console.error("重试过程中出错:", error);
+            
+            // 清除进度更新定时器
+            clearInterval(progressInterval);
+            
+            // 设置处理失败标志
+            window.state.processingSuccess = false;
+            
+            // 记录错误
+            window.state.processingError = error;
+            window.state.processDescription = `重试失败: ${error.message}`;
+            
+            // 更新进度条为错误状态
+            updateProgressBar(100, '重试失败!', true);
+            
+            // 显示错误结果
+            showResultView({
+                type: 'text',
+                content: `重试过程中出错: ${error.message}`,
+                status: 'error'
+            });
+            
+            // 隐藏加载指示器
+            hideLoadingIndicator();
+        }
+    } catch (error) {
+        console.error("准备重试时出错:", error);
+        
+        // 显示错误提示
+        showToast(`无法重试: ${error.message}`, 'error');
+        
+        // 隐藏加载指示器
+        hideLoadingIndicator();
+    }
+}
+
+/**
+ * 根据风格选择生成风格转换指令
+ * @param {string} style - 风格标识
+ * @returns {string} 格式化的指令文本
+ */
+function getStyleInstruction(style) {
+    const styleMap = {
+        'anime': '请将这张图片转换为以下风格：动漫风格，清新可爱的日系动漫风格。请保持图像主体特征，仅应用风格变化。',
+        'oil': '请将这张图片转换为以下风格：油画风格，厚重的笔触和丰富的色彩。请保持图像主体特征，仅应用风格变化。',
+        'sketch': '请将这张图片转换为以下风格：素描风格，黑白素描效果，强调线条和明暗对比。请保持图像主体特征，仅应用风格变化。',
+        'pixel': '请将这张图片转换为以下风格：像素艺术风格，复古游戏像素效果，使用有限的调色板。请保持图像主体特征，仅应用风格变化。',
+        'watercolor': '请将这张图片转换为以下风格：水彩画风格，轻盈透明的水彩效果，色彩柔和自然。请保持图像主体特征，仅应用风格变化。',
+        'comic': '请将这张图片转换为以下风格：漫画风格，美式漫画风格，强调线条和分块色彩。请保持图像主体特征，仅应用风格变化。',
+        'vintage': '请将这张图片转换为以下风格：复古风格，复古照片效果，怀旧色调，轻微褪色和颗粒感。请保持图像主体特征，仅应用风格变化。',
+        'cyberpunk': '请将这张图片转换为以下风格：赛博朋克风格，霓虹灯效果和未来感，高对比度和饱和度的色彩。请保持图像主体特征，仅应用风格变化。'
+    };
+    
+    return styleMap[style] || `请将这张图片转换为艺术风格，保持图像主体特征，仅应用风格变化。`;
+}
+
+/**
+ * 根据创意风格选择生成创意转换指令
+ * @param {string} creativeStyle - 创意风格标识
+ * @returns {string} 格式化的指令文本
+ */
+function getCreativeInstruction(creativeStyle) {
+    const creativeMap = {
+        'creative': '基于这张图片创建创意变体，保持主体可识别，但可以添加创意元素和环境，整体风格更艺术化。',
+        'poster': '将这张图片转换为具有社会批判性的艺术海报，添加适当的图像元素和构图，使整体风格更具冲击力和象征意义。',
+        'sticker': '将图片主体转换为可爱的卡通贴纸，添加厚白色边框，背景透明，整体风格可爱简洁。'
+    };
+    
+    return creativeMap[creativeStyle] || `基于这张图片创建创意变体，保持主体可识别但风格独特。`;
+}
+
+/**
+ * 确保结果容器初始状态正确
+ */
+function initResultContainer() {
+    const resultContainer = document.getElementById('result-container');
+    if (resultContainer) {
+        // 确保初始时结果容器是隐藏的
+        resultContainer.setAttribute('hidden', '');
+        resultContainer.classList.remove('show');
+        console.log("初始化结果容器为隐藏状态");
+    }
+}
+
+// 页面加载完成后初始化所有组件
+document.addEventListener('DOMContentLoaded', function() {
+    try {
+        console.log("初始化处理页面组件");
+        
+        // 初始化状态
+        resetState();
+        
+        // 初始化结果容器
+        initResultContainer();
+        
+        // 初始化步骤导航
+        initStepNavigation();
+        
+        // 初始化操作选择
+        initOperationSelection();
+        
+        // 初始化图片上传
+        initImageUpload();
+        
+        // 初始化文字描述
+        initTextDescription();
+        
+        // 初始化风格选择
+        initStyleSelection();
+        
+        // 初始化处理按钮
+        initProcessingAction();
+        
+        // 初始化结果查看器
+        initResultViewer();
+        
+        console.log("页面组件初始化完成");
+    } catch (error) {
+        console.error("初始化过程中出错:", error);
+    }
+});
+
+/**
+ * 创建图片预览元素
+ * @param {File} file - 上传的图片文件
+ */
+function createImagePreview(file) {
+    try {
+        if (!file || !file.type.startsWith('image/')) {
+            console.error('无效的图片文件:', file);
+            return;
+        }
+        
+        const previewContainer = document.getElementById('images-preview');
+        if (!previewContainer) {
+            console.error('未找到预览容器元素');
+            return;
+        }
+        
+        // 清除当前预览
+        previewContainer.innerHTML = '';
+        
+        // 创建预览项
+        const previewItem = document.createElement('div');
+        previewItem.className = 'preview-item';
+        previewItem.dataset.filename = file.name;
+        
+        // 创建预览容器以保持图片比例
+        const imageContainer = document.createElement('div');
+        imageContainer.className = 'preview-image-container';
+        
+        // 创建图片元素
+        const img = document.createElement('img');
+        img.className = 'preview-image';
+        img.alt = file.name;
+        
+        // 添加loading效果
+        const loadingSpinner = document.createElement('div');
+        loadingSpinner.className = 'preview-loading';
+        loadingSpinner.innerHTML = '<span class="material-symbols-rounded">hourglass_top</span>';
+        imageContainer.appendChild(loadingSpinner);
+        
+        // 使用FileReader读取图片
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            // 移除loading效果
+            loadingSpinner.remove();
+            
+            // 设置图片源
+            img.src = e.target.result;
+            
+            // 保存上传图片的URL以便在结果视图中显示
+            window.state.uploadedImageUrl = e.target.result;
+            
+            // 添加淡入效果
+            setTimeout(() => {
+                img.style.opacity = '1';
+            }, 50);
+            
+            console.log(`已创建美化预览：${file.name}`);
+            
+            // 显示文件名和大小
+            const fileInfo = document.createElement('div');
+            fileInfo.className = 'file-info';
+            fileInfo.textContent = `${file.name} (${formatFileSize(file.size)})`;
+            previewItem.appendChild(fileInfo);
+        };
+        
+        reader.onerror = function() {
+            console.error(`图片预览生成失败: ${file.name}`);
+            loadingSpinner.innerHTML = '<span class="material-symbols-rounded">error</span>';
+            loadingSpinner.classList.add('error');
+        };
+        
+        // 开始读取文件
+        reader.readAsDataURL(file);
+        
+        // 设置初始不透明度为0，实现淡入效果
+        img.style.opacity = '0';
+        img.style.transition = 'opacity 0.3s ease-in-out';
+        
+        // 创建删除按钮
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'remove-btn';
+        removeBtn.innerHTML = '<span class="material-symbols-rounded">close</span>';
+        removeBtn.title = '删除图片';
+        removeBtn.addEventListener('click', function(e) {
+            e.stopPropagation(); // 阻止事件冒泡
+            removeImage(file.name);
+        });
+        
+        // 组装预览项
+        imageContainer.appendChild(img);
+        previewItem.appendChild(imageContainer);
+        previewItem.appendChild(removeBtn);
+        previewContainer.appendChild(previewItem);
+        
+        // 更新上传区域显示状态
+        updateUploadAreaDisplay();
+        
+        // 自动选中该图片
+        toggleImageSelection(previewItem);
+        
+        // 更新当前步骤的按钮状态
+        checkAndEnableNextButton();
+        
+        // 添加CSS样式
+        addPreviewStyles();
+    } catch (error) {
+        console.error('创建图片预览时出错:', error);
+    }
+}
+
+/**
+ * 格式化文件大小
+ * @param {number} bytes - 文件大小（字节）
+ * @returns {string} 格式化后的大小
+ */
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+/**
+ * 添加预览样式
+ */
+function addPreviewStyles() {
+    // 检查是否已添加样式
+    if (document.getElementById('preview-custom-styles')) {
+        return;
+    }
+    
+    // 创建样式元素
+    const style = document.createElement('style');
+    style.id = 'preview-custom-styles';
+    style.textContent = `
+        .preview-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 20px;
+            justify-content: center;
+        }
+        
+        .preview-item {
+            position: relative;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            width: 200px;
+            background-color: #f8f9fa;
+        }
+        
+        .preview-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+        }
+        
+        .preview-image-container {
+            position: relative;
+            width: 100%;
+            height: 200px;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #ebedef;
+        }
+        
+        .preview-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.3s ease;
+        }
+        
+        .preview-item:hover .preview-image {
+            transform: scale(1.05);
+        }
+        
+        .remove-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(255, 255, 255, 0.8);
+            border: none;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.3s, background-color 0.3s;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        
+        .preview-item:hover .remove-btn {
+            opacity: 1;
+        }
+        
+        .remove-btn:hover {
+            background-color: #ff4d4f;
+            color: white;
+        }
+        
+        .file-info {
+            padding: 10px;
+            font-size: 12px;
+            color: #666;
+            background-color: white;
+            text-align: center;
+            word-break: break-all;
+            border-top: 1px solid #eee;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .preview-loading {
+            position: absolute;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
+            z-index: 1;
+        }
+        
+        .preview-loading .material-symbols-rounded {
+            font-size: 32px;
+            color: #1677ff;
+            animation: spin 1.5s linear infinite;
+        }
+        
+        .preview-loading.error .material-symbols-rounded {
+            color: #ff4d4f;
+            animation: none;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* 黑暗模式适配 */
+        .dark-theme .preview-item {
+            background-color: #1a1d21;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        
+        .dark-theme .preview-image-container {
+            background-color: #2a2d31;
+        }
+        
+        .dark-theme .file-info {
+            color: #bbb;
+            background-color: #2a2d31;
+            border-top: 1px solid #444;
+        }
+        
+        .dark-theme .remove-btn {
+            background-color: rgba(40, 44, 52, 0.8);
+            color: #ddd;
+        }
+        
+        .dark-theme .preview-loading {
+            background-color: rgba(30, 34, 42, 0.8);
+        }
+    `;
+    
+    // 添加到文档
+    document.head.appendChild(style);
+    console.log("已添加预览样式");
+}
+
+/**
+ * 删除已上传的图片
+ * @param {string} filename - 要删除的图片文件名
+ */
+function removeImage(filename) {
+    try {
+        console.log(`删除图片: ${filename}`);
+        
+        // 更新状态
+        window.state.uploadedImages = window.state.uploadedImages.filter(
+            img => img.name !== filename
+        );
+        
+        // 清除uploadedImageUrl
+        window.state.uploadedImageUrl = null;
+        
+        // 移除图片预览
+        const previewContainer = document.getElementById('images-preview');
+        if (previewContainer) {
+            const previewItem = previewContainer.querySelector(`.preview-item[data-filename="${filename}"]`);
+            if (previewItem) {
+                // 添加淡出动画
+                previewItem.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                previewItem.style.opacity = '0';
+                previewItem.style.transform = 'scale(0.9)';
+                
+                // 等待动画完成后移除元素
+                setTimeout(() => {
+                    previewContainer.removeChild(previewItem);
+                    
+                    // 如果没有图片了，更新上传区域显示
+                    if (window.state.uploadedImages.length === 0) {
+                        updateUploadAreaDisplay();
+                    }
+                }, 300);
+            }
+        }
+        
+        // 更新按钮状态
+        checkAndEnableNextButton();
+        
+        showToast(`已删除图片: ${filename}`, 'info');
+    } catch (error) {
+        console.error(`删除图片出错: ${error.message}`);
+    }
+}
+
+/**
+ * 更新上传区域的显示状态
+ */
+function updateUploadAreaDisplay() {
+    const uploadArea = document.getElementById('upload-area');
+    const uploadInner = document.querySelector('.upload-inner');
+    const previewContainer = document.getElementById('images-preview');
+    
+    if (!uploadArea || !uploadInner || !previewContainer) {
+        console.warn('无法找到上传区域元素');
+        return;
+    }
+    
+    // 检查是否有上传的图片
+    const hasUploads = window.state.uploadedImages && window.state.uploadedImages.length > 0;
+    
+    // 更新上传区域样式
+    if (hasUploads) {
+        // 如果有上传图片，调整上传区样式
+        uploadInner.style.display = 'none';
+        previewContainer.style.display = 'flex';
+        uploadArea.classList.add('has-uploads');
+        
+        // 添加上传更多的按钮
+        if (!document.getElementById('upload-more-btn')) {
+            const uploadMoreBtn = document.createElement('button');
+            uploadMoreBtn.id = 'upload-more-btn';
+            uploadMoreBtn.className = 'upload-more-btn';
+            uploadMoreBtn.innerHTML = '<span class="material-symbols-rounded">add_photo_alternate</span>上传更多';
+            uploadMoreBtn.addEventListener('click', () => {
+                document.getElementById('file-input').click();
+            });
+            uploadArea.appendChild(uploadMoreBtn);
+            
+            // 添加上传更多按钮的样式
+            if (!document.getElementById('upload-more-styles')) {
+                const style = document.createElement('style');
+                style.id = 'upload-more-styles';
+                style.textContent = `
+                    .upload-more-btn {
+                        position: absolute;
+                        bottom: 15px;
+                        right: 15px;
+                        background-color: #1677ff;
+                        color: white;
+                        border: none;
+                        border-radius: 20px;
+                        padding: 8px 16px;
+                        display: flex;
+                        align-items: center;
+                        font-size: 14px;
+                        cursor: pointer;
+                        transition: background-color 0.3s;
+                        box-shadow: 0 2px 8px rgba(22, 119, 255, 0.3);
+                        z-index: 2;
+                    }
+                    
+                    .upload-more-btn .material-symbols-rounded {
+                        margin-right: 6px;
+                        font-size: 18px;
+                    }
+                    
+                    .upload-more-btn:hover {
+                        background-color: #0958d9;
+                    }
+                    
+                    .dark-theme .upload-more-btn {
+                        background-color: #177ddc;
+                        box-shadow: 0 2px 8px rgba(23, 125, 220, 0.3);
+                    }
+                    
+                    .dark-theme .upload-more-btn:hover {
+                        background-color: #0a6bc9;
+                    }
+                    
+                    .upload-area {
+                        position: relative;
+                        min-height: 240px;
+                    }
+                    
+                    .upload-area.has-uploads {
+                        background-color: transparent;
+                        border: none;
+                        box-shadow: none;
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+        }
+    } else {
+        // 如果没有上传图片，恢复默认样式
+        uploadInner.style.display = 'block';
+        previewContainer.style.display = 'none';
+        uploadArea.classList.remove('has-uploads');
+        
+        // 移除上传更多按钮
+        const uploadMoreBtn = document.getElementById('upload-more-btn');
+        if (uploadMoreBtn) {
+            uploadMoreBtn.remove();
+        }
+    }
+    
+    console.log(`上传区域显示状态已更新: 有上传图片=${hasUploads}`);
+}
+
+/**
+ * 切换图片选择状态
+ * @param {HTMLElement} previewItem - 图片预览元素
+ */
+function toggleImageSelection(previewItem) {
+    if (!previewItem) return;
+    
+    // 所有预览项
+    const allPreviewItems = document.querySelectorAll('.preview-item');
+    
+    // 取消所有选择
+    allPreviewItems.forEach(item => {
+        item.classList.remove('selected');
+    });
+    
+    // 选中当前预览项
+    previewItem.classList.add('selected');
+    
+    // 添加选中样式
+    if (!document.getElementById('selection-styles')) {
+        const style = document.createElement('style');
+        style.id = 'selection-styles';
+        style.textContent = `
+            .preview-item.selected {
+                outline: 3px solid #1677ff;
+                box-shadow: 0 4px 14px rgba(22, 119, 255, 0.3);
+            }
+            
+            .preview-item.selected::before {
+                content: "✓";
+                position: absolute;
+                top: 10px;
+                left: 10px;
+                background-color: #1677ff;
+                color: white;
+                width: 24px;
+                height: 24px;
+                border-radius: 50%;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                font-size: 14px;
+                z-index: 2;
+            }
+            
+            .dark-theme .preview-item.selected {
+                outline: 3px solid #177ddc;
+                box-shadow: 0 4px 14px rgba(23, 125, 220, 0.3);
+            }
+            
+            .dark-theme .preview-item.selected::before {
+                background-color: #177ddc;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    console.log(`已选中图片: ${previewItem.dataset.filename}`);
 }

@@ -50,7 +50,7 @@ class API {
             try {
                 // 准备API请求数据
                 const requestData = {
-                    model: "gpt-4o-image", // 使用gpt-4o模型，它支持图像处理和生成
+                    model: "gpt-4o-image-vip", // 恢复原来的模型名称点击了上传按钮，触发文件选择
                     messages: [
                         {
                             role: "system",
@@ -81,12 +81,11 @@ class API {
                     // 获取图片尺寸
                     const dimensions = await this.getImageDimensions(imageFile);
 
-                    // 添加图片数据到请求
+                    // 修改图片数据格式
                     requestData.messages[1].content.push({
                         type: "image_url",
                         image_url: {
-                            url: imageDataBase64,
-                            detail: "high" // 使用高细节模式
+                            url: imageDataBase64
                         }
                     });
 
@@ -119,7 +118,16 @@ class API {
 
                 if (!response.ok) {
                     const errorText = await response.text();
-                    throw new Error(`API请求失败: ${response.status} ${response.statusText} - ${errorText}`);
+                    // 处理常见的错误情况
+                    if (response.status === 500 && errorText.includes('检测到崩溃')) {
+                        throw new Error(`服务器崩溃: ${errorText}。服务器暂时不可用，请稍后再试。`);
+                    } else if (response.status === 500 && errorText.includes('interface conversion')) {
+                        throw new Error(`API接口错误: ${errorText}。服务器解析请求出错，请尝试刷新页面重试。`);
+                    } else if (response.status === 429) {
+                        throw new Error(`请求过于频繁: ${errorText}。服务器当前负载较高，请稍后再试。`);
+                    } else {
+                        throw new Error(`API请求失败: ${response.status} ${response.statusText} - ${errorText}`);
+                    }
                 }
 
                 // 解析API响应
@@ -266,6 +274,19 @@ class API {
             // 获取内容
             let content = assistantMessage.content || '';
             console.log("AI响应内容:", content);
+            
+            // 检查是否包含失败信息
+            if (content.includes('生成失败') || content.includes('处理失败') || 
+                content.includes('❌') || content.includes('failed')) {
+                console.warn("检测到生成失败信息:", content);
+                return {
+                    type: 'text',
+                    content: content,
+                    status: 'error',
+                    raw: responseData,
+                    errorType: 'generation_failed'
+                };
+            }
             
             // 保存最后一次响应数据，用于可能的延迟检查
             this.lastResponseData = responseData;
