@@ -56,18 +56,139 @@ window.state = state;
 
 /**
  * 检查并启用下一步按钮
+ * 确保根据当前步骤的完成情况正确地激活或禁用下一步按钮
  */
 function checkAndEnableNextButton() {
-    const nextButton = document.getElementById('next-to-step3');
-    if (!nextButton) return;
-
-    // 根据操作类型和状态决定是否启用下一步按钮
-    if (state.selectedOperation === 'generate') {
-        // 生成模式下只需要有文字描述
-        nextButton.disabled = !state.instruction.trim();
+    console.log(`处理模块: 检查步骤 ${window.state.currentStep} 的按钮状态`);
+    
+    // 获取对应的下一步按钮元素
+    const currentStepButtonId = `next-to-step${Number(window.state.currentStep) + 2}`;
+    const nextButton = document.getElementById(currentStepButtonId);
+    
+    if (nextButton) {
+        console.log(`找到按钮: ${currentStepButtonId}, 当前状态: ${nextButton.disabled ? '禁用' : '启用'}`);
     } else {
-        // 其他模式需要同时有图片和文字描述
-        nextButton.disabled = !(state.uploadedImages.length > 0 && state.instruction.trim());
+        console.log(`未找到按钮: ${currentStepButtonId}`);
+        return; // 如果找不到按钮元素，则退出函数
+    }
+    
+    let shouldEnable = false;
+    
+    // 根据当前步骤判断是否应该启用按钮
+    switch (window.state.currentStep) {
+        case 1: // 图片上传步骤
+            // 直接检查全局uploadedImages数组
+            if (window.uploadedImages && window.uploadedImages.length > 0) {
+                console.log(`已上传图片: true，数量: ${window.uploadedImages.length}`);
+                shouldEnable = true;
+            } else if (window.state.uploadedImages && window.state.uploadedImages.length > 0) {
+                console.log(`state中有上传图片: true，数量: ${window.state.uploadedImages.length}`);
+                shouldEnable = true;
+            } else if (document.querySelectorAll('.image-preview-item').length > 0) {
+                console.log(`DOM中找到图片预览元素，数量: ${document.querySelectorAll('.image-preview-item').length}`);
+                shouldEnable = true;
+            } else {
+                console.log('未检测到已上传图片，禁用下一步按钮');
+            }
+            break;
+            
+        case 2: // 选择操作步骤
+            if (window.state.selectedOperation) {
+                shouldEnable = true;
+            }
+            break;
+            
+        // 其他步骤的按钮启用逻辑
+        default:
+            shouldEnable = true;
+            break;
+    }
+    
+    // 更新按钮状态
+    if (shouldEnable) {
+        nextButton.disabled = false;
+        nextButton.classList.add('active');
+        console.log(`已启用按钮: ${currentStepButtonId}`);
+    } else {
+        nextButton.disabled = true;
+        nextButton.classList.remove('active');
+        console.log(`已禁用按钮: ${currentStepButtonId}`);
+    }
+    
+    // 如果已标记图片上传更新，检测所有下一步按钮
+    if (window.uploadedImagesUpdated && window.state.currentStep === 1) {
+        console.log('检测到uploadedImagesUpdated标志，更新所有下一步按钮');
+        const allNextButtons = document.querySelectorAll('.next-btn');
+        if (allNextButtons.length > 0) {
+            allNextButtons.forEach(btn => {
+                btn.disabled = false;
+                btn.classList.add('active');
+            });
+        }
+    }
+}
+
+/**
+ * 更新按钮状态
+ * @param {HTMLElement} button - 要更新的按钮元素
+ */
+function updateButtonState(button) {
+    if (!button) return;
+    
+    // 确保全局状态存在
+    if (!window.uploadedImages) {
+        window.uploadedImages = [];
+    }
+    if (!window.state) {
+        window.state = {
+            uploadedImages: window.uploadedImages,
+            instruction: ''
+        };
+    }
+    
+    // 统一使用全局上传数组
+    if (window.state.uploadedImages && window.state.uploadedImages.length > 0) {
+        // 确保全局数组与state同步
+        window.uploadedImages = window.state.uploadedImages;
+    } else if (window.uploadedImages && window.uploadedImages.length > 0) {
+        // 确保state与全局数组同步
+        window.state.uploadedImages = window.uploadedImages;
+    }
+    
+    // 获取已上传图片
+    const hasUploadedImages = window.uploadedImages && window.uploadedImages.length > 0;
+    
+    // 获取文本输入
+    const hasInputText = document.getElementById('image-description') && 
+                        document.getElementById('image-description').value.trim().length > 0;
+    
+    // 检查是否是步骤2的按钮（前往步骤3）
+    const isStep2Button = button.id === 'next-to-step3';
+    
+    if (isStep2Button) {
+        // 如果是图片上传步骤，判断是否有图片或文字输入
+        const shouldEnable = hasUploadedImages || hasInputText;
+        
+        // 设置按钮状态
+        button.disabled = !shouldEnable;
+        
+        if (shouldEnable) {
+            button.classList.add('active');
+            console.log('已启用按钮:', button.id || '无ID');
+        } else {
+            button.classList.remove('active');
+            console.log('已禁用按钮:', button.id || '无ID');
+        }
+    } else {
+        // 对于其他步骤的按钮，直接根据全局状态启用
+        const shouldEnable = window.state && window.state.currentStep > 0;
+        button.disabled = !shouldEnable;
+        
+        if (shouldEnable) {
+            button.classList.add('active');
+        } else {
+            button.classList.remove('active');
+        }
     }
 }
 
@@ -95,7 +216,7 @@ async function processImageWithInstruction() {
             if (window.state.uploadedImages && window.state.uploadedImages.length > 0) {
                 imageFile = window.state.uploadedImages[0]; // 使用第一张上传的图片
                 console.log("将发送图片到API:", imageFile.name);
-            } else {
+    } else {
                 throw new Error("未上传图片，无法进行操作");
             }
         }
@@ -134,7 +255,7 @@ async function processImageWithInstruction() {
             } else if (selectedCreative) {
                 // 否则使用预设创意指令
                 instruction = getCreativeInstruction(selectedCreative);
-            } else {
+        } else {
                 throw new Error("未选择创意风格或输入自定义指令");
             }
         }
@@ -376,7 +497,7 @@ function showResultView(response) {
             if (processedImage) {
                 processedImage.src = '';
             }
-        } else {
+            } else {
             // 成功响应处理
             if (response.type === 'text_and_image') {
                 // 设置原始图片（如果有的话）
@@ -934,16 +1055,136 @@ function initTextDescription() {
  * 检查并启用下一步按钮
  */
 function checkAndEnableNextButton() {
-    const nextButton = document.getElementById('next-to-step3');
-    if (!nextButton) return;
-
-    // 根据操作类型和状态决定是否启用下一步按钮
-    if (state.selectedOperation === 'generate') {
-        // 生成模式下只需要有文字描述
-        nextButton.disabled = !state.instruction.trim();
+    console.log(`处理模块: 检查步骤 ${window.state.currentStep} 的按钮状态`);
+    
+    // 获取对应的下一步按钮元素
+    const currentStepButtonId = `next-to-step${Number(window.state.currentStep) + 2}`;
+    const nextButton = document.getElementById(currentStepButtonId);
+    
+    if (nextButton) {
+        console.log(`找到按钮: ${currentStepButtonId}, 当前状态: ${nextButton.disabled ? '禁用' : '启用'}`);
     } else {
-        // 其他模式需要同时有图片和文字描述
-        nextButton.disabled = !(state.uploadedImages.length > 0 && state.instruction.trim());
+        console.log(`未找到按钮: ${currentStepButtonId}`);
+        return; // 如果找不到按钮元素，则退出函数
+    }
+    
+    let shouldEnable = false;
+    
+    // 根据当前步骤判断是否应该启用按钮
+    switch (window.state.currentStep) {
+        case 1: // 图片上传步骤
+            // 直接检查全局uploadedImages数组
+            if (window.uploadedImages && window.uploadedImages.length > 0) {
+                console.log(`已上传图片: true，数量: ${window.uploadedImages.length}`);
+                shouldEnable = true;
+            } else if (window.state.uploadedImages && window.state.uploadedImages.length > 0) {
+                console.log(`state中有上传图片: true，数量: ${window.state.uploadedImages.length}`);
+                shouldEnable = true;
+            } else if (document.querySelectorAll('.image-preview-item').length > 0) {
+                console.log(`DOM中找到图片预览元素，数量: ${document.querySelectorAll('.image-preview-item').length}`);
+                shouldEnable = true;
+            } else {
+                console.log('未检测到已上传图片，禁用下一步按钮');
+            }
+            break;
+            
+        case 2: // 选择操作步骤
+            if (window.state.selectedOperation) {
+                shouldEnable = true;
+            }
+            break;
+            
+        // 其他步骤的按钮启用逻辑
+        default:
+            shouldEnable = true;
+            break;
+    }
+    
+    // 更新按钮状态
+    if (shouldEnable) {
+        nextButton.disabled = false;
+        nextButton.classList.add('active');
+        console.log(`已启用按钮: ${currentStepButtonId}`);
+    } else {
+        nextButton.disabled = true;
+        nextButton.classList.remove('active');
+        console.log(`已禁用按钮: ${currentStepButtonId}`);
+    }
+    
+    // 如果已标记图片上传更新，检测所有下一步按钮
+    if (window.uploadedImagesUpdated && window.state.currentStep === 1) {
+        console.log('检测到uploadedImagesUpdated标志，更新所有下一步按钮');
+        const allNextButtons = document.querySelectorAll('.next-btn');
+        if (allNextButtons.length > 0) {
+            allNextButtons.forEach(btn => {
+                btn.disabled = false;
+                btn.classList.add('active');
+            });
+        }
+    }
+}
+
+/**
+ * 更新按钮状态
+ * @param {HTMLElement} button - 要更新的按钮元素
+ */
+function updateButtonState(button) {
+    if (!button) return;
+    
+    // 确保全局状态存在
+    if (!window.uploadedImages) {
+        window.uploadedImages = [];
+    }
+    if (!window.state) {
+        window.state = {
+            uploadedImages: window.uploadedImages,
+            instruction: ''
+        };
+    }
+    
+    // 统一使用全局上传数组
+    if (window.state.uploadedImages && window.state.uploadedImages.length > 0) {
+        // 确保全局数组与state同步
+        window.uploadedImages = window.state.uploadedImages;
+    } else if (window.uploadedImages && window.uploadedImages.length > 0) {
+        // 确保state与全局数组同步
+        window.state.uploadedImages = window.uploadedImages;
+    }
+    
+    // 获取已上传图片
+    const hasUploadedImages = window.uploadedImages && window.uploadedImages.length > 0;
+    
+    // 获取文本输入
+    const hasInputText = document.getElementById('image-description') && 
+                        document.getElementById('image-description').value.trim().length > 0;
+    
+    // 检查是否是步骤2的按钮（前往步骤3）
+    const isStep2Button = button.id === 'next-to-step3';
+    
+    if (isStep2Button) {
+        // 如果是图片上传步骤，判断是否有图片或文字输入
+        const shouldEnable = hasUploadedImages || hasInputText;
+        
+        // 设置按钮状态
+        button.disabled = !shouldEnable;
+        
+        if (shouldEnable) {
+            button.classList.add('active');
+            console.log('已启用按钮:', button.id || '无ID');
+        } else {
+            button.classList.remove('active');
+            console.log('已禁用按钮:', button.id || '无ID');
+        }
+    } else {
+        // 对于其他步骤的按钮，直接根据全局状态启用
+        const shouldEnable = window.state && window.state.currentStep > 0;
+        button.disabled = !shouldEnable;
+        
+        if (shouldEnable) {
+            button.classList.add('active');
+        } else {
+            button.classList.remove('active');
+        }
     }
 }
 
@@ -1039,8 +1280,8 @@ function goToStep(step) {
     const stepContents = document.querySelectorAll('.step-content');
     stepContents.forEach(content => {
         content.classList.remove('active');
-        content.style.display = 'none';
-    });
+            content.style.display = 'none';
+        });
         
         // 显示目标步骤
         const targetStep = document.getElementById(`step-${step}`);
@@ -1058,8 +1299,8 @@ function goToStep(step) {
                 stepContent.style.display = 'block';
                 console.log(`通过索引找到并激活步骤${step}`);
             } else {
-                return;
-            }
+            return;
+        }
         }
         
         // 更新步骤指示器状态
@@ -1380,7 +1621,7 @@ function initProcessingAction() {
             // 调用处理函数
             await processImageWithInstruction();
             
-        } catch (error) {
+                        } catch (error) {
             console.error("处理按钮事件错误:", error);
             showToast(error.message, 'error');
         } finally {
@@ -1712,27 +1953,27 @@ async function handleApiFailure(operation, originalImageSrc) {
     try {
         console.log("检查是否有延迟响应...");
         
-        const delayedResponse = await window.API.checkDelayedResponse();
+    const delayedResponse = await window.API.checkDelayedResponse();
         
         if (delayedResponse && delayedResponse.imageUrl) {
-            console.log("在handleApiFailure中发现延迟响应:", delayedResponse);
-            
+        console.log("在handleApiFailure中发现延迟响应:", delayedResponse);
+        
             // 使用延迟响应，而不是显示错误
-            showResultView({
-                type: 'text_and_image',
-                content: delayedResponse.content || '处理完成（延迟响应）',
-                imageUrl: delayedResponse.imageUrl,
-                status: 'success',
-                originalWidth: delayedResponse.originalWidth,
-                originalHeight: delayedResponse.originalHeight
-            });
-            
-            // 隐藏加载指示器
-            hideLoadingIndicator();
-            
-            // 显示提示
-            showToast('处理成功（延迟响应）', 'success');
-            
+        showResultView({
+            type: 'text_and_image',
+            content: delayedResponse.content || '处理完成（延迟响应）',
+            imageUrl: delayedResponse.imageUrl,
+            status: 'success',
+            originalWidth: delayedResponse.originalWidth,
+            originalHeight: delayedResponse.originalHeight
+        });
+        
+        // 隐藏加载指示器
+        hideLoadingIndicator();
+        
+        // 显示提示
+        showToast('处理成功（延迟响应）', 'success');
+        
             return; // 直接返回，不显示错误信息
         } else {
             console.log("没有找到延迟响应或响应不包含图片，显示错误信息");
@@ -2132,18 +2373,36 @@ function handleFilesUpload(files) {
             return;
         }
         
-        // 清除之前的上传
-        window.state.uploadedImages = [];
+        // 检查总图片数量是否超过限制
+        const MAX_TOTAL_FILES = 5;
+        if (window.state.uploadedImages.length + validFiles.length > MAX_TOTAL_FILES) {
+            showToast(`最多只能上传${MAX_TOTAL_FILES}张图片`, 'error');
+            return;
+        }
         
-        // 我们只处理第一张图片
-        const imageFile = validFiles[0];
+        // 检查是否有重复文件
+        const newFiles = validFiles.filter(newFile => {
+            const isDuplicate = window.state.uploadedImages.some(
+                existingFile => existingFile.name === newFile.name && existingFile.size === newFile.size
+            );
+            if (isDuplicate) {
+                showToast(`文件 ${newFile.name} 已经上传过了`, 'warning');
+            }
+            return !isDuplicate;
+        });
         
-        // 更新状态
-        window.state.uploadedImages = [imageFile];
-        console.log("已同步更新state.uploadedImages，仅保留一张图片:", imageFile.name);
+        if (newFiles.length === 0) {
+            return;
+        }
         
-        // 创建预览 - 只创建一张预览图
-        createImagePreview(imageFile);
+        // 添加新文件到已上传图片数组
+        window.state.uploadedImages = [...window.state.uploadedImages, ...newFiles];
+        console.log("已更新state.uploadedImages，当前图片数量:", window.state.uploadedImages.length);
+        
+        // 为每个新文件创建预览
+        newFiles.forEach(file => {
+            createImagePreview(file);
+        });
         
         // 更新按钮状态
         checkAndEnableNextButton();
@@ -3080,4 +3339,4 @@ function toggleImageSelection(previewItem) {
     }
     
     console.log(`已选中图片: ${previewItem.dataset.filename}`);
-}
+} 

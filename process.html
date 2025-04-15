@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="styles/main.css">
     <link rel="stylesheet" href="styles/animations.css">
     <link rel="stylesheet" href="styles/process.css">
+    <link rel="stylesheet" href="styles/preview.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0">
     <link rel="icon" type="image/svg+xml" href="assets/images/favicon.svg">
     <!-- 在页面加载前应用主题，避免闪烁 -->
@@ -262,10 +263,11 @@
                             <input type="file" id="file-input" accept="image/*" multiple hidden>
                             <button class="upload-btn">选择图片</button>
                         </div>
-                        <!-- 修改预览容器结构 -->
-                        <div class="preview-container" id="images-preview">
-                            <!-- 预览项将通过JavaScript动态添加 -->
-                        </div>
+                    </div>
+                    
+                    <!-- 图片预览区域 -->
+                    <div id="image-preview">
+                        <!-- 预览项将通过JavaScript动态添加 -->
                     </div>
 
                     <!-- 文字描述区域 - 仅在一句话生成美图时显示 -->

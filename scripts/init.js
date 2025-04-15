@@ -33,58 +33,47 @@ document.addEventListener('DOMContentLoaded', function() {
  * 确保图片上传功能正常工作
  */
 function initImageUploadManually() {
+    // 检查是否已经初始化过
+    if (window.imageUploadInitialized) {
+        console.log('图片上传功能已经初始化过，跳过重复初始化');
+        return;
+    }
+    
     console.log('手动初始化图片上传功能');
     
+    // 获取DOM元素
     const uploadArea = document.getElementById('upload-area');
     const fileInput = document.getElementById('file-input');
-    const uploadButton = document.querySelector('.upload-btn');
-    const nextButton = document.getElementById('next-to-step3');
     
     if (!uploadArea || !fileInput) {
         console.error('未找到上传区域或文件输入元素');
         return;
     }
     
-    // 直接绑定下一步按钮的点击事件
-    if (nextButton) {
-        console.log('找到下一步按钮，直接绑定点击事件');
-        
-        // 移除可能存在的旧事件监听器
-        const newNextButton = nextButton.cloneNode(true);
-        nextButton.parentNode.replaceChild(newNextButton, nextButton);
-        
-        // 添加新的点击事件处理器
-        newNextButton.addEventListener('click', function(e) {
-            e.preventDefault();
-            console.log('点击下一步按钮，直接跳转到步骤3');
-            
-            // 尝试调用goToStep函数
-            if (typeof window.goToStep === 'function') {
-                window.goToStep(3);
-            } else {
-                // 手动切换到步骤3
-                manualGoToStep3();
-            }
-        });
+    // 如果UI.js已经初始化了上传功能，使用它的函数
+    if (window.UI && typeof window.UI.handleFilesUpload === 'function') {
+        console.log('使用UI模块提供的handleFilesUpload函数');
+        window.handleFilesUpload = window.UI.handleFilesUpload;
+        window.imageUploadInitialized = true;
+        return;
     }
     
-    if (uploadButton) {
-        console.log('找到上传按钮，重新添加点击事件');
-        
-        // 移除可能存在的旧事件监听器
-        const newButton = uploadButton.cloneNode(true);
-        uploadButton.parentNode.replaceChild(newButton, uploadButton);
-        
-        // 添加新的点击事件处理器
-        newButton.addEventListener('click', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            console.log('点击了上传按钮，触发文件选择');
-            fileInput.click();
-        });
-    } else {
-        console.error('未找到上传按钮');
+    // 确保全局上传图片数组存在
+    if (!window.uploadedImages) {
+        window.uploadedImages = [];
     }
+    
+    // 整个上传区域点击触发文件选择
+    uploadArea.addEventListener('click', function(e) {
+        // 如果点击的是删除按钮，不触发文件选择
+        if (e.target.closest('.delete-button') || e.target.closest('.delete-preview')) {
+            console.log('点击了删除按钮，不触发文件选择');
+            return;
+        }
+        
+        console.log('点击上传区域，触发文件选择');
+        fileInput.click();
+    });
     
     // 确保文件输入元素有正确的事件处理器
     fileInput.addEventListener('change', function(e) {
@@ -93,13 +82,43 @@ function initImageUploadManually() {
         if (files.length > 0) {
             console.log(`选择了 ${files.length} 个图片文件`);
             
-            // 直接处理文件上传
+            // 处理上传的图片
             processUploadedFiles(files);
         } else {
             console.warn('未选择图片文件或文件类型不正确');
         }
     });
     
+    // 拖放功能
+    uploadArea.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        uploadArea.classList.add('dragover');
+    });
+    
+    uploadArea.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        uploadArea.classList.remove('dragover');
+    });
+    
+    uploadArea.addEventListener('drop', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        uploadArea.classList.remove('dragover');
+        
+        const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+        if (files.length > 0) {
+            console.log(`拖放上传了 ${files.length} 个图片文件`);
+            
+            // 处理上传的图片
+            processUploadedFiles(files);
+        } else {
+            console.warn('未选择图片文件或文件类型不正确');
+        }
+    });
+    
+    window.imageUploadInitialized = true;
     console.log('图片上传功能初始化完成');
 }
 
@@ -110,7 +129,7 @@ function initImageUploadManually() {
 function processUploadedFiles(files) {
     console.log('处理上传的图片文件');
     
-    // 创建全局上传图片数组（如果不存在）
+    // 确保全局上传图片数组存在
     if (!window.uploadedImages) {
         window.uploadedImages = [];
     }
@@ -158,7 +177,11 @@ function processUploadedFiles(files) {
         console.log('已同步更新state.uploadedImages');
         
         // 手动启用下一步按钮
-        enableNextButton();
+        if (typeof window.checkAndEnableNextButton === 'function') {
+            window.checkAndEnableNextButton();
+        } else {
+            enableNextButton();
+        }
     }
 }
 
@@ -169,14 +192,14 @@ function processUploadedFiles(files) {
 function createImagePreview(file) {
     const reader = new FileReader();
     reader.onload = function(e) {
-        const previewContainer = document.getElementById('images-preview');
+        const previewContainer = document.getElementById('image-preview');
         if (!previewContainer) {
             console.error('未找到预览容器');
             return;
         }
         
         const previewItem = document.createElement('div');
-        previewItem.className = 'preview-item';
+        previewItem.className = 'image-preview-item';
         previewItem.dataset.filename = file.name;
 
         const img = document.createElement('img');
@@ -184,7 +207,7 @@ function createImagePreview(file) {
         img.alt = file.name;
 
         const removeBtn = document.createElement('button');
-        removeBtn.className = 'remove-btn';
+        removeBtn.className = 'delete-preview';
         removeBtn.innerHTML = '<span class="material-symbols-rounded">close</span>';
         removeBtn.onclick = function(e) {
             e.stopPropagation();
@@ -214,25 +237,32 @@ function toggleImageSelection(previewItem) {
 }
 
 /**
- * 移除指定图片
- * @param {string} filename - 要移除的文件名
+ * 移除图片
+ * @param {string} filename - 图片文件名
  */
 function removeImage(filename) {
     // 从数组中移除
     window.uploadedImages = window.uploadedImages.filter(file => file.name !== filename);
     
     // 移除预览元素
-    const previewItem = document.querySelector(`.preview-item[data-filename="${filename}"]`);
+    const previewItem = document.querySelector(`.image-preview-item[data-filename="${filename}"]`);
     if (previewItem) {
         previewItem.remove();
-    }
-
-    // 同步更新state
-    if (window.state) {
-        window.state.uploadedImages = window.uploadedImages;
+        console.log(`已移除图片：${filename}`);
     }
     
-    console.log(`已移除图片：${filename}`);
+    // 更新上传区域状态
+    updateUploadAreaDisplay();
+    
+    // 同步更新state状态
+    if (window.state) {
+        window.state.uploadedImages = window.uploadedImages;
+        
+        // 如果process.js中定义了更新按钮状态的函数，调用它
+        if (typeof window.checkAndEnableNextButton === 'function') {
+            window.checkAndEnableNextButton();
+        }
+    }
 }
 
 /**
@@ -240,7 +270,7 @@ function removeImage(filename) {
  */
 function updateUploadAreaDisplay() {
     const uploadArea = document.getElementById('upload-area');
-    const previewContainer = document.getElementById('images-preview');
+    const previewContainer = document.getElementById('image-preview');
     
     if (!uploadArea || !previewContainer) return;
     
